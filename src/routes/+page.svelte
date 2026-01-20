@@ -527,26 +527,10 @@
 		name="viewport"
 		content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no"
 	/>
-	<link
-		rel="apple-touch-icon"
-		sizes="180x180"
-		href="AppIcons/Assets.xcassets/AppIcon.appiconset/180.png"
-	/>
-	<link
-		rel="apple-touch-icon"
-		sizes="167x167"
-		href="AppIcons/Assets.xcassets/AppIcon.appiconset/167.png"
-	/>
-	<link
-		rel="apple-touch-icon"
-		sizes="152x152"
-		href="AppIcons/Assets.xcassets/AppIcon.appiconset/152.png"
-	/>
-	<link
-		rel="apple-touch-icon"
-		sizes="120x120"
-		href="AppIcons/Assets.xcassets/AppIcon.appiconset/120.png"
-	/>
+	<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon-180x180.png" />
+	<link rel="apple-touch-icon" sizes="167x167" href="/apple-touch-icon-167x167.png" />
+	<link rel="apple-touch-icon" sizes="152x152" href="/apple-touch-icon-152x152.png" />
+	<link rel="apple-touch-icon" sizes="120x120" href="/apple-touch-icon-120x120.png" />
 	<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 	<meta name="theme-color" content="#2563eb" />
 	<meta name="mobile-web-app-capable" content="yes" />
