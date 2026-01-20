@@ -519,7 +519,7 @@
 
 <svelte:head>
 	<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-
+	<link rel="manifest" href="/manifest.json" />
 	<meta name="apple-mobile-web-app-capable" content="yes" />
 	<meta name="apple-mobile-web-app-status-bar-style" content="default" />
 	<meta name="apple-mobile-web-app-title" content="Headways" />
@@ -527,7 +527,30 @@
 		name="viewport"
 		content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no"
 	/>
-
+	<link
+		rel="apple-touch-icon"
+		sizes="180x180"
+		href="AppIcons/Assets.xcassets/AppIcon.appiconset/180.png"
+	/>
+	<link
+		rel="apple-touch-icon"
+		sizes="167x167"
+		href="AppIcons/Assets.xcassets/AppIcon.appiconset/167.png"
+	/>
+	<link
+		rel="apple-touch-icon"
+		sizes="152x152"
+		href="AppIcons/Assets.xcassets/AppIcon.appiconset/152.png"
+	/>
+	<link
+		rel="apple-touch-icon"
+		sizes="120x120"
+		href="AppIcons/Assets.xcassets/AppIcon.appiconset/120.png"
+	/>
+	<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+	<meta name="theme-color" content="#2563eb" />
+	<meta name="mobile-web-app-capable" content="yes" />
+	<meta name="application-name" content="Headways" />
 	<meta name="format-detection" content="telephone=no" />
 </svelte:head>
 
