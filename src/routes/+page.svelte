@@ -164,7 +164,7 @@
 				return '/agencyLogos/muni-t.png';
 			}
 			if (routeShortName === 'F') {
-				return '/agencyLogos/muni-t.png';
+				return '/agencyLogos/muni-f.png';
 			}
 			return '/agencyLogos/muni.png';
 		}
