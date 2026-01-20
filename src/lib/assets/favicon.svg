@@ -1,40 +1,35 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 500.16 500.16">
+<svg id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 452.16 452.16">
   <defs>
     <style>
       .cls-1 {
+        fill: #e3e3e3;
         filter: url(#drop-shadow-2);
       }
 
       .cls-2 {
-        fill: #fff;
-      }
-
-      .cls-3 {
         fill: #e04b4b;
         filter: url(#drop-shadow-1);
         stroke: #fff;
         stroke-miterlimit: 10;
-        stroke-width: 33.33px;
+        stroke-width: 20px;
       }
     </style>
-    <filter id="drop-shadow-1" x="0" y="0" width="500.16" height="500.16" filterUnits="userSpaceOnUse">
+    <filter id="drop-shadow-1" x="0" y="0" width="452.16" height="452.16" filterUnits="userSpaceOnUse">
       <feOffset dx="0" dy="0"/>
-      <feGaussianBlur result="blur" stdDeviation="5.56"/>
+      <feGaussianBlur result="blur" stdDeviation="2"/>
       <feFlood flood-color="#231f20" flood-opacity=".75"/>
       <feComposite in2="blur" operator="in"/>
       <feComposite in="SourceGraphic"/>
     </filter>
-    <filter id="drop-shadow-2" x="149.2" y="123.76" width="201.84" height="252.72" filterUnits="userSpaceOnUse">
+    <filter id="drop-shadow-2" x="84.59" y="84.59" width="282.96" height="282.96" filterUnits="userSpaceOnUse">
       <feOffset dx="0" dy="0"/>
-      <feGaussianBlur result="blur-2" stdDeviation="2.22"/>
+      <feGaussianBlur result="blur-2" stdDeviation="1.56"/>
       <feFlood flood-color="#231f20" flood-opacity=".75"/>
       <feComposite in2="blur-2" operator="in"/>
       <feComposite in="SourceGraphic"/>
     </filter>
   </defs>
-  <rect class="cls-3" x="50.11" y="50.11" width="400" height="400" rx="11.11" ry="11.11"/>
-  <g class="cls-1">
-    <path class="cls-2" d="M155.95,130.56h32.71v98.8h122.88v-98.8h32.71v239.1h-32.71v-111.82h-122.88v111.82h-32.71v-239.1Z"/>
-  </g>
+  <rect class="cls-2" x="26" y="26" width="400" height="400" rx="5" ry="5"/>
+  <path class="cls-1" d="M270.43,130.3c-4.79,0-8.83-1.65-12.13-4.96s-4.96-7.35-4.96-12.13,1.65-8.83,4.96-12.13,7.35-4.96,12.13-4.96,8.83,1.65,12.13,4.96c3.3,3.3,4.96,7.35,4.96,12.13s-1.65,8.83-4.96,12.13-7.35,4.96-12.13,4.96ZM270.43,355.88c-4.79,0-8.83-1.65-12.13-4.96s-4.96-7.35-4.96-12.13,1.65-8.83,4.96-12.13c3.3-3.3,7.35-4.96,12.13-4.96s8.83,1.65,12.13,4.96,4.96,7.35,4.96,12.13-1.65,8.83-4.96,12.13c-3.3,3.3-7.35,4.96-12.13,4.96ZM325.12,178.15c-4.79,0-8.83-1.65-12.13-4.96s-4.96-7.35-4.96-12.13,1.65-8.83,4.96-12.13,7.35-4.96,12.13-4.96,8.83,1.65,12.13,4.96,4.96,7.35,4.96,12.13-1.65,8.83-4.96,12.13-7.35,4.96-12.13,4.96ZM325.12,308.03c-4.79,0-8.83-1.65-12.13-4.96-3.3-3.3-4.96-7.35-4.96-12.13s1.65-8.83,4.96-12.13,7.35-4.96,12.13-4.96,8.83,1.65,12.13,4.96,4.96,7.35,4.96,12.13-1.65,8.83-4.96,12.13c-3.3,3.3-7.35,4.96-12.13,4.96ZM345.63,243.09c-4.79,0-8.83-1.65-12.13-4.96-3.3-3.3-4.96-7.35-4.96-12.13s1.65-8.83,4.96-12.13c3.3-3.3,7.35-4.96,12.13-4.96s8.83,1.65,12.13,4.96c3.3,3.3,4.96,7.35,4.96,12.13s-1.65,8.83-4.96,12.13c-3.3,3.3-7.35,4.96-12.13,4.96ZM226,362.72c-18.91,0-36.69-3.59-53.32-10.77-16.63-7.18-31.1-16.92-43.41-29.22s-22.05-26.77-29.22-43.41c-7.18-16.63-10.77-34.41-10.77-53.32s3.59-36.69,10.77-53.32c7.18-16.63,16.92-31.1,29.22-43.41,12.3-12.3,26.77-22.05,43.41-29.22,16.63-7.18,34.41-10.77,53.32-10.77v27.34c-30.53,0-56.4,10.6-77.59,31.79-21.19,21.19-31.79,47.05-31.79,77.59s10.6,56.4,31.79,77.59c21.19,21.19,47.05,31.79,77.59,31.79v27.34ZM271.12,290.26l-58.79-58.79v-73.83h27.34v62.89l50.59,50.59-19.14,19.14Z"/>
 </svg>
