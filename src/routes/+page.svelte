@@ -14,6 +14,11 @@
 	let userLocationMarker: any;
 	let currentTripLayers: any[] = []; // Store route shape and stop layers
 	let isLoadingTrip = false;
+	let agencyLayers: Map<number, any> = new Map(); // Map agency_id to layer group
+	let searchQuery = $state('');
+	let allVehicles: TransitVehicle[] = $state([]);
+	let selectedVehicle: TransitVehicle | null = $state(null);
+	let isClosing = $state(false);
 
 	interface TransitVehicle {
 		op_agency: number;
@@ -93,6 +98,12 @@
 					text_color: agencyData.color_scheme?.default?.[1] || '',
 					...agencyData
 				});
+
+				// Create layer group for this agency if it doesn't exist
+				if (L && map && !agencyLayers.has(id)) {
+					const layerGroup = L.layerGroup().addTo(map);
+					agencyLayers.set(id, layerGroup);
+				}
 
 				if (agencyData.routes && Array.isArray(agencyData.routes)) {
 					for (const route of agencyData.routes) {
@@ -196,6 +207,15 @@
 			return '/agencyLogos/dumbarton-express.png';
 		}
 		if (agencyName === 'vta') {
+			if (routeShortName === 'Blue Line') {
+				return '/agencyLogos/vta-blue.png';
+			}
+			if (routeShortName === 'Green Line') {
+				return '/agencyLogos/vta-green.png';
+			}
+			if (routeShortName === 'Orange Line') {
+				return '/agencyLogos/vta-orange.png';
+			}
 			return '/agencyLogos/vta.png';
 		}
 		if (agencyName === 'soltrans') {
@@ -246,6 +266,21 @@
 			}
 		});
 		currentTripLayers = [];
+	}
+
+	function selectVehicle(vehicle: TransitVehicle) {
+		selectedVehicle = vehicle;
+		isClosing = false;
+		showTripRoute(vehicle);
+	}
+
+	function closeBottomSheet() {
+		isClosing = true;
+		clearTripLayers();
+		setTimeout(() => {
+			selectedVehicle = null;
+			isClosing = false;
+		}, 200); // Match animation duration
 	}
 
 	async function showTripRoute(vehicle: TransitVehicle) {
@@ -370,14 +405,55 @@
 		requestAnimationFrame(animate);
 	}
 
+	function matchesSearch(vehicle: TransitVehicle): boolean {
+		if (!searchQuery.trim()) return true;
+		
+		const query = searchQuery.toLowerCase();
+		const agency = agencies.get(vehicle.agency);
+		const routeKey = `${vehicle.agency}:${vehicle.route_id}`;
+		const routeInfo = routes.get(routeKey);
+		
+		// Check route short name
+		if (vehicle.route_short_name?.toLowerCase().includes(query)) return true;
+		
+		// Check route long name
+		if (routeInfo?.route_long_name?.toLowerCase().includes(query)) return true;
+		
+		// Check vehicle ID
+		if (vehicle.vehicle_id?.toString().toLowerCase().includes(query)) return true;
+		
+		// Check agency name
+		if (agency?.name?.toLowerCase().includes(query)) return true;
+		if (agency?.short_name?.toLowerCase().includes(query)) return true;
+		
+		// Check headsign
+		if (vehicle.trip_headsign?.toLowerCase().includes(query)) return true;
+		
+		// Check vehicle make and model
+		if (vehicle.make?.toLowerCase().includes(query)) return true;
+		if (vehicle.model?.toLowerCase().includes(query)) return true;
+		
+		return false;
+	}
+
 	function updateVehicleMarkers(vehicles: TransitVehicle[]) {
 		if (!map || !L) {
 			return;
 		}
 
+		const filteredVehicles = vehicles.filter(matchesSearch);
 		const activeVehicles = new Set<string>();
 
-		vehicles.forEach((vehicle) => {
+		// Hide all markers first
+		vehicleMarkers.forEach((marker, uniqueId) => {
+			agencyLayers.forEach((layer) => {
+				if (layer.hasLayer(marker)) {
+					layer.removeLayer(marker);
+				}
+			});
+		});
+
+		filteredVehicles.forEach((vehicle) => {
 			if (vehicle.lat && vehicle.lon) {
 				activeVehicles.add(vehicle.unique_id);
 
@@ -398,39 +474,28 @@
 					// Update click handler for existing marker
 					marker.off('click');
 					marker.on('click', () => {
-						showTripRoute(vehicle);
+						selectVehicle(vehicle);
 					});
+
+					// Re-add to agency layer
+					const agencyLayer = agencyLayers.get(vehicle.agency);
+					if (agencyLayer && !agencyLayer.hasLayer(marker)) {
+						agencyLayer.addLayer(marker);
+					}
 				} else {
 					const newMarker = L.marker(newPosition, {
 						icon: createVehicleIcon(vehicle)
-					}).addTo(map);
-
-					// Add popup with vehicle info
-					const agency = agencies.get(vehicle.agency);
-					const routeInfo = routes.get(`${vehicle.agency}:${vehicle.route_id}`);
-					const routeDisplay =
-						routeInfo && routeInfo.route_long_name
-							? `${routeInfo.route_short_name} - ${routeInfo.route_long_name}`
-							: vehicle.route_short_name;
-					const agencyLogo = getAgencyLogo(agency, vehicle);
-					const logoHtml = agencyLogo
-						? `<div style="text-align: left;"><img src="${agencyLogo}" alt="${agency.name}" style="max-width: 100%; max-height: 36px; width: auto; height: auto;"></div>`
-						: '';
-
-					newMarker.bindPopup(`
-						<div style="font-family: sans-serif; font-size: 12px;">
-							${logoHtml}
-							<h2>${routeDisplay}</h2>
-							<h3>${vehicle.trip_headsign || 'No destination'}</h3>
-							Vehicle: ${vehicle.vehicle_id}<br>
-							${vehicle.next_stop_name ? `Next: ${vehicle.next_stop_name}` : ''}
-							${vehicle.make && vehicle.model ? `<br>${vehicle.year} ${vehicle.make} ${vehicle.model}` : ''}
-						</div>
-					`);
+					});
 
 					newMarker.on('click', () => {
-						showTripRoute(vehicle);
+						selectVehicle(vehicle);
 					});
+
+					// Add marker to agency-specific layer
+					const agencyLayer = agencyLayers.get(vehicle.agency);
+					if (agencyLayer) {
+						agencyLayer.addLayer(newMarker);
+					}
 
 					vehicleMarkers.set(vehicle.unique_id, newMarker);
 				}
@@ -438,7 +503,12 @@
 		});
 		for (const [uniqueId, marker] of vehicleMarkers.entries()) {
 			if (!activeVehicles.has(uniqueId)) {
-				map.removeLayer(marker);
+				// Remove from all layers
+				agencyLayers.forEach((layer) => {
+					if (layer.hasLayer(marker)) {
+						layer.removeLayer(marker);
+					}
+				});
 				vehicleMarkers.delete(uniqueId);
 			}
 		}
@@ -446,7 +516,12 @@
 
 	async function updateTransitData() {
 		const vehicles = await fetchTransitData();
+		allVehicles = vehicles;
 		updateVehicleMarkers(vehicles);
+	}
+
+	function handleSearchInput() {
+		updateVehicleMarkers(allVehicles);
 	}
 
 	onMount(async () => {
@@ -468,8 +543,20 @@
 			).addTo(map);
 
 			map.on('click', () => {
-				clearTripLayers();
+				closeBottomSheet();
 			});
+
+			await fetchAgencies();
+
+			// Create layer control after agencies are loaded
+			const overlays: Record<string, any> = {};
+			agencyLayers.forEach((layer, agencyId) => {
+				const agency = agencies.get(agencyId);
+				if (agency) {
+					overlays[agency.name] = layer;
+				}
+			});
+			L.control.layers(null, overlays, { collapsed: true }).addTo(map);
 
 			if (navigator.geolocation) {
 				navigator.geolocation.getCurrentPosition(
@@ -494,7 +581,6 @@
 				);
 			}
 
-			await fetchAgencies();
 			await updateTransitData();
 			updateInterval = setInterval(updateTransitData, 3000);
 		}
@@ -539,7 +625,75 @@
 </svelte:head>
 
 <div class="map-container">
+	<div class="search-container">
+		<input
+			type="text"
+			bind:value={searchQuery}
+			oninput={handleSearchInput}
+			placeholder="Search routes, vehicles, agencies..."
+			class="search-input"
+		/>
+	</div>
 	<div bind:this={mapContainer} class="map"></div>
+	
+	{#if selectedVehicle}
+		{@const agency = agencies.get(selectedVehicle.agency)}
+		{@const routeInfo = routes.get(`${selectedVehicle.agency}:${selectedVehicle.route_id}`)}
+		{@const routeDisplay = routeInfo && routeInfo.route_long_name
+			? `${routeInfo.route_short_name} - ${routeInfo.route_long_name}`
+			: selectedVehicle.route_short_name}
+		{@const agencyLogo = getAgencyLogo(agency, selectedVehicle)}
+		
+		<div class="bottom-sheet" class:closing={isClosing}>
+			<button class="close-button" onclick={closeBottomSheet} aria-label="Close">×</button>
+			
+			{#if agencyLogo}
+				<div class="logo-container">
+					<img src={agencyLogo} alt={agency?.name} class="agency-logo" />
+				</div>
+			{/if}
+			
+			<div class="route-info">
+				<h2 class="route-name">{routeDisplay}</h2>
+				<h3 class="headsign">{selectedVehicle.trip_headsign || 'No destination'}</h3>
+			</div>
+			
+			<div class="vehicle-details">
+				<div class="detail-row">
+					<span class="detail-label">Vehicle:</span>
+					<span class="detail-value">{selectedVehicle.vehicle_id}</span>
+				</div>
+				
+				{#if agency}
+					<div class="detail-row">
+						<span class="detail-label">Agency:</span>
+						<span class="detail-value">{agency.name}</span>
+					</div>
+				{/if}
+				
+				{#if selectedVehicle.next_stop_name}
+					<div class="detail-row">
+						<span class="detail-label">Next Stop:</span>
+						<span class="detail-value">{selectedVehicle.next_stop_name}</span>
+					</div>
+				{/if}
+				
+				{#if selectedVehicle.make && selectedVehicle.model}
+					<div class="detail-row">
+						<span class="detail-label">Vehicle Type:</span>
+						<span class="detail-value">{selectedVehicle.year} {selectedVehicle.make} {selectedVehicle.model}</span>
+					</div>
+				{/if}
+				
+				{#if selectedVehicle.speed}
+					<div class="detail-row">
+						<span class="detail-label">Speed:</span>
+						<span class="detail-value">{Math.round(selectedVehicle.speed)} mph</span>
+					</div>
+				{/if}
+			</div>
+		</div>
+	{/if}
 </div>
 
 <style>
@@ -548,12 +702,161 @@
 		height: 100vh;
 		margin: 0;
 		padding: 0;
+		position: relative;
+	}
+
+	.search-container {
+		position: absolute;
+		top: 10px;
+		left: 50%;
+		transform: translateX(-50%);
+		z-index: 1000;
+		width: 90%;
+		max-width: 400px;
+	}
+
+	.search-input {
+		width: 100%;
+		padding: 12px 16px;
+		font-size: 16px;
+		border: none;
+		border-radius: 8px;
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+		outline: none;
+		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+	}
+
+	.search-input:focus {
+		box-shadow: 0 2px 12px rgba(37, 99, 235, 0.3);
 	}
 
 	.map {
 		width: 100%;
 		height: 100%;
 	}
+
+	.bottom-sheet {
+		position: fixed;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		background: white;
+		border-radius: 16px 16px 0 0;
+		box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.3);
+		z-index: 1001;
+		padding: 20px;
+		max-height: 60vh;
+		overflow-y: auto;
+		animation: slideUp 0.2s ease-out;
+		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+		transition: height 0.2s ease-out;
+	}
+
+	.bottom-sheet.closing {
+		animation: slideDown 0.2s ease-out;
+	}
+
+	@keyframes slideUp {
+		from {
+			transform: translateY(100%);
+		}
+		to {
+			transform: translateY(0);
+		}
+	}
+
+	@keyframes slideDown {
+		from {
+			transform: translateY(0);
+		}
+		to {
+			transform: translateY(100%);
+		}
+	}
+
+	.close-button {
+		position: absolute;
+		top: 12px;
+		right: 12px;
+		width: 32px;
+		height: 32px;
+		border: none;
+		background: #f3f4f6;
+		border-radius: 50%;
+		font-size: 24px;
+		line-height: 1;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		color: #6b7280;
+		transition: background 0.2s;
+		padding: 0;
+		font-family: Arial, sans-serif;
+	}
+
+	.close-button:hover {
+		background: #e5e7eb;
+	}
+
+	.logo-container {
+		text-align: center;
+		margin-bottom: 16px;
+	}
+
+	.agency-logo {
+		max-width: 100%;
+		max-height: 48px;
+		width: auto;
+		height: auto;
+	}
+
+	.route-info {
+		margin-bottom: 20px;
+		padding-bottom: 16px;
+		border-bottom: 1px solid #e5e7eb;
+	}
+
+	.route-name {
+		font-size: 24px;
+		font-weight: 700;
+		margin: 0 0 8px 0;
+		color: #111827;
+	}
+
+	.headsign {
+		font-size: 18px;
+		font-weight: 500;
+		margin: 0;
+		color: #6b7280;
+	}
+
+	.vehicle-details {
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+	}
+
+	.detail-row {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 8px 0;
+	}
+
+	.detail-label {
+		font-weight: 600;
+		color: #6b7280;
+		font-size: 14px;
+	}
+
+	.detail-value {
+		font-weight: 500;
+		color: #111827;
+		font-size: 14px;
+		text-align: right;
+	}
+
 	:global(.leaflet-container) {
 		height: 100%;
 		width: 100%;

@@ -143,13 +143,13 @@
 			}
 			if (agency.name.toLowerCase() == 'vta') {
 				if (route == 'Blue Line') {
-					return '#007ACC';
+					return '#2CB6E7';
 				}
 				if (route == 'Green Line') {
-					return '#379400';
+					return '#A1CF67';
 				}
 				if (route == 'Orange Line') {
-					return '#CC6600';
+					return '#F89923';
 				}
 				if (route.includes('Rapid')) {
 					return '#E4002B';
@@ -214,6 +214,18 @@
 			? `${routeInfo.route_short_name} - ${routeInfo.route_long_name}`
 			: vehicle.route_short_name
 	);
+	const isTrain: Boolean = [
+		'J',
+		'K',
+		'L',
+		'M',
+		'N',
+		'T',
+		'F',
+		'Blue Line',
+		'Green Line',
+		'Orange Line'
+	].includes(vehicle.route_short_name);
 </script>
 
 <div class="vehicle" style="background-color: {backgroundColor};" title={routeTooltip}>
@@ -232,6 +244,7 @@
 		font-weight: bold;
 		font-family: 'Helvetica', sans-serif;
 		border: 2px solid white;
+		border-radius: 2px;
 		box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 		text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 		border-radius: 2px;
