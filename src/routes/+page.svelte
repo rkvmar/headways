@@ -9,6 +9,7 @@
 	let L: any;
 	let vehicleMarkers: Map<string, any> = new Map();
 	let updateInterval: NodeJS.Timeout;
+	let agenciesInterval: NodeJS.Timeout;
 	let agencies: Map<number, any> = new Map();
 	let routes: Map<string, any> = new Map(); // Map agency_id:route_id to route info
 	let userLocationMarker: any;
@@ -407,32 +408,32 @@
 
 	function matchesSearch(vehicle: TransitVehicle): boolean {
 		if (!searchQuery.trim()) return true;
-		
+
 		const query = searchQuery.toLowerCase();
 		const agency = agencies.get(vehicle.agency);
 		const routeKey = `${vehicle.agency}:${vehicle.route_id}`;
 		const routeInfo = routes.get(routeKey);
-		
+
 		// Check route short name
 		if (vehicle.route_short_name?.toLowerCase().includes(query)) return true;
-		
+
 		// Check route long name
 		if (routeInfo?.route_long_name?.toLowerCase().includes(query)) return true;
-		
+
 		// Check vehicle ID
 		if (vehicle.vehicle_id?.toString().toLowerCase().includes(query)) return true;
-		
+
 		// Check agency name
 		if (agency?.name?.toLowerCase().includes(query)) return true;
 		if (agency?.short_name?.toLowerCase().includes(query)) return true;
-		
+
 		// Check headsign
 		if (vehicle.trip_headsign?.toLowerCase().includes(query)) return true;
-		
+
 		// Check vehicle make and model
 		if (vehicle.make?.toLowerCase().includes(query)) return true;
 		if (vehicle.model?.toLowerCase().includes(query)) return true;
-		
+
 		return false;
 	}
 
@@ -467,6 +468,8 @@
 					const distance = currentPos.distanceTo(newPos);
 					if (distance > 1) {
 						animateMarkerToPosition(marker, newPos, 2500);
+					} else {
+						marker.setLatLng(newPos);
 					}
 
 					marker.setIcon(createVehicleIcon(vehicle));
@@ -547,6 +550,7 @@
 			});
 
 			await fetchAgencies();
+			agenciesInterval = setInterval(fetchAgencies, 3000);
 
 			// Create layer control after agencies are loaded
 			const overlays: Record<string, any> = {};
@@ -589,6 +593,10 @@
 	onDestroy(() => {
 		if (updateInterval) {
 			clearInterval(updateInterval);
+		}
+
+		if (agenciesInterval) {
+			clearInterval(agenciesInterval);
 		}
 
 		if (userLocationMarker) {
@@ -635,56 +643,59 @@
 		/>
 	</div>
 	<div bind:this={mapContainer} class="map"></div>
-	
+
 	{#if selectedVehicle}
 		{@const agency = agencies.get(selectedVehicle.agency)}
 		{@const routeInfo = routes.get(`${selectedVehicle.agency}:${selectedVehicle.route_id}`)}
-		{@const routeDisplay = routeInfo && routeInfo.route_long_name
-			? `${routeInfo.route_short_name} - ${routeInfo.route_long_name}`
-			: selectedVehicle.route_short_name}
+		{@const routeDisplay =
+			routeInfo && routeInfo.route_long_name
+				? `${routeInfo.route_short_name} - ${routeInfo.route_long_name}`
+				: selectedVehicle.route_short_name}
 		{@const agencyLogo = getAgencyLogo(agency, selectedVehicle)}
-		
+
 		<div class="bottom-sheet" class:closing={isClosing}>
 			<button class="close-button" onclick={closeBottomSheet} aria-label="Close">×</button>
-			
+
 			{#if agencyLogo}
 				<div class="logo-container">
 					<img src={agencyLogo} alt={agency?.name} class="agency-logo" />
 				</div>
 			{/if}
-			
+
 			<div class="route-info">
 				<h2 class="route-name">{routeDisplay}</h2>
 				<h3 class="headsign">{selectedVehicle.trip_headsign || 'No destination'}</h3>
 			</div>
-			
+
 			<div class="vehicle-details">
 				<div class="detail-row">
 					<span class="detail-label">Vehicle:</span>
 					<span class="detail-value">{selectedVehicle.vehicle_id}</span>
 				</div>
-				
+
 				{#if agency}
 					<div class="detail-row">
 						<span class="detail-label">Agency:</span>
 						<span class="detail-value">{agency.name}</span>
 					</div>
 				{/if}
-				
+
 				{#if selectedVehicle.next_stop_name}
 					<div class="detail-row">
 						<span class="detail-label">Next Stop:</span>
 						<span class="detail-value">{selectedVehicle.next_stop_name}</span>
 					</div>
 				{/if}
-				
+
 				{#if selectedVehicle.make && selectedVehicle.model}
 					<div class="detail-row">
 						<span class="detail-label">Vehicle Type:</span>
-						<span class="detail-value">{selectedVehicle.year} {selectedVehicle.make} {selectedVehicle.model}</span>
+						<span class="detail-value"
+							>{selectedVehicle.year} {selectedVehicle.make} {selectedVehicle.model}</span
+						>
 					</div>
 				{/if}
-				
+
 				{#if selectedVehicle.speed}
 					<div class="detail-row">
 						<span class="detail-label">Speed:</span>

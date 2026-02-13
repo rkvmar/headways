@@ -71,7 +71,7 @@
 
 	const routeNameToShortName: Record<string, string> = {
 		'Presidio GO South Hills': 'SH',
-		'Presidio GO Downtown Route': 'DR',
+		'Presidio GO Downtown': 'DT',
 		'Local Weekday': vehicle.vehicle_id.toString(),
 		'Local Weekend': vehicle.vehicle_id.toString(),
 		Limited: vehicle.vehicle_id.toString(),
