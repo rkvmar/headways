@@ -2,6 +2,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { browser } from '$app/environment';
 	import { mount } from 'svelte';
+
 	import Vehicle from '$lib/components/Vehicle.svelte';
 
 	let mapContainer: HTMLDivElement;
@@ -437,6 +438,11 @@
 		return false;
 	}
 
+	function isVehicleInView(vehicle: TransitVehicle, bounds: any): boolean {
+		if (!vehicle.lat || !vehicle.lon) return false;
+		return bounds.contains(L.latLng(vehicle.lat, vehicle.lon));
+	}
+
 	function updateVehicleMarkers(vehicles: TransitVehicle[]) {
 		if (!map || !L) {
 			return;
@@ -444,6 +450,7 @@
 
 		const filteredVehicles = vehicles.filter(matchesSearch);
 		const activeVehicles = new Set<string>();
+		const bounds = map.getBounds();
 
 		// Hide all markers first
 		vehicleMarkers.forEach((marker, uniqueId) => {
@@ -457,6 +464,10 @@
 		filteredVehicles.forEach((vehicle) => {
 			if (vehicle.lat && vehicle.lon) {
 				activeVehicles.add(vehicle.unique_id);
+
+				if (!isVehicleInView(vehicle, bounds)) {
+					return;
+				}
 
 				const marker = vehicleMarkers.get(vehicle.unique_id);
 				const newPosition = [vehicle.lat, vehicle.lon];
@@ -535,7 +546,17 @@
 			let defaultLng = -122.4194;
 			let defaultZoom = 10;
 
-			map = L.map(mapContainer).setView([defaultLat, defaultLng], defaultZoom);
+			(window as any).L = L;
+			// await import('projektpro-leaflet-smoothwheelzoom');
+
+			map = L.map(mapContainer, {
+				scrollWheelZoom: true,
+				smoothSensitivity: 1
+			}).setView([defaultLat, defaultLng], defaultZoom);
+
+			// if (map.smoothWheelZoom) {
+			// 	map.smoothWheelZoom.enable();
+			// }
 
 			L.tileLayer(
 				'https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}.png',
@@ -547,6 +568,10 @@
 
 			map.on('click', () => {
 				closeBottomSheet();
+			});
+
+			map.on('moveend zoomend', () => {
+				updateVehicleMarkers(allVehicles);
 			});
 
 			await fetchAgencies();
@@ -737,10 +762,6 @@
 		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 	}
 
-	.search-input:focus {
-		box-shadow: 0 2px 12px rgba(37, 99, 235, 0.3);
-	}
-
 	.map {
 		width: 100%;
 		height: 100%;
@@ -899,5 +920,6 @@
 	:global(body) {
 		margin: 0;
 		padding: 0;
+		overflow: hidden;
 	}
 </style>

@@ -26,6 +26,7 @@
 		"vite": "^7.2.6"
 	},
 	"dependencies": {
-		"leaflet": "^1.9.4"
+		"leaflet": "^1.9.4",
+		"projektpro-leaflet-smoothwheelzoom": "^0.1.4"
 	}
 }
