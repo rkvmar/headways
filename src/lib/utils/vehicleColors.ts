@@ -1,0 +1,94 @@
+export function getVehicleColorForAgency(
+	routeShortName: string | null | undefined,
+	agencyName?: string | null
+): string {
+	if (!agencyName) {
+		return '#424242';
+	}
+
+	const agencyKey = agencyName.toLowerCase();
+	const routeKey = routeShortName || '';
+
+	const routeColorMap: Record<string, Record<string, string>> = {
+		'san francisco muni': {
+			J: '#DF8719',
+			K: '#579BBE',
+			L: '#942593',
+			M: '#03814E',
+			N: '#084E75',
+			T: '#D01245',
+			F: '#6D4300',
+			PM: '#911515',
+			PH: '#911515',
+			CA: '#911515'
+		},
+		'ac transit': {
+			'1T': '#6B1984'
+		},
+		vta: {
+			'Blue Line': '#2CB6E7',
+			'Green Line': '#A1CF67',
+			'Orange Line': '#F89923'
+		},
+		soltrans: {
+			R: '#D63029',
+			Y: '#FDB415',
+			G: '#50A140',
+			B: '#004D91'
+		},
+		'san diego mts': {
+			'Blue Line': '#0070BF',
+			'Green Line': '#32BB6A',
+			'Orange Line': '#FFA532',
+			Copper: '#C0835B'
+		},
+		'la metro': {
+			'A Line': '#0073BD',
+			'B Line': '#E40B14',
+			'C Line': '#57A935',
+			'D Line': '#A25DA7',
+			'E Line': '#F7B710',
+			'G Line': '#FC4B00',
+			'J Line': '#AEB9C0',
+			'K Line': '#EA6BB2'
+		}
+	};
+
+	const agencyColorMap: Record<string, string> = {
+		'san francisco muni': '#CD3545',
+		samtrans: '#00529B',
+		'golden gate transit': '#426C3E',
+		caltrain: '#DB1734',
+		'ac transit': '#006B54',
+		'san francisco bay ferries': '#0A4E86',
+		'county connection': '#FFB944',
+		wheels: '#02354C',
+		'dumbarton express': '#007AFF',
+		vta: '#4CB4E7',
+		soltrans: '#2C8736',
+		'the vine': '#E77342',
+		'sonoma county transit': '#193888',
+		'santa rosa citybus': '#035B91',
+		'sonoma marin area rail transit': '#104432',
+		'tri delta transit': '#004B8F',
+		'fairfield and suisun transit': '#064F8F',
+		'san diego mts': '#DE2B26',
+		'north county transit district': '#088C99',
+		'la metro': '#262626',
+		ladot: '#0D47A1',
+		'long beach transit': '#D62028',
+		'foothill transit': '#1A87BC',
+		'pasadena transit': '#1BA6BC'
+	};
+
+	const routeMap = routeColorMap[agencyKey];
+	if (routeMap && routeKey && routeMap[routeKey]) {
+		return routeMap[routeKey];
+	}
+
+	if (agencyKey === 'vta' && routeKey.includes('Rapid')) {
+		return '#E4002B';
+	}
+
+	return agencyColorMap[agencyKey] || '#424242';
+}
