@@ -532,8 +532,17 @@
 
 		if (!target || !target.lat || !target.lon) return;
 
+		const targetLatLng = [target.lat, target.lon] as [number, number];
 		const nextZoom = Math.max(map.getZoom(), 15);
-		map.setView([target.lat, target.lon], nextZoom, { animate: true });
+		const size = map.getSize();
+		const desiredPoint = L.point(size.x / 2, size.y * 0.25);
+		const centerPoint = map
+			.project(targetLatLng, nextZoom)
+			.subtract(desiredPoint)
+			.add(L.point(size.x / 2, size.y / 2));
+		const centerLatLng = map.unproject(centerPoint, nextZoom);
+
+		map.setView(centerLatLng, nextZoom, { animate: true });
 
 		if (liveVehicle) {
 			selectVehicle(liveVehicle);
