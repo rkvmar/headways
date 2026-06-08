@@ -10,7 +10,7 @@ export function getVehicleColorForAgency(
 	const routeKey = routeShortName || '';
 
 	const routeColorMap: Record<string, Record<string, string>> = {
-		'san francisco muni': {
+		'san francisco municipal transportation agency': {
 			J: '#DF8719',
 			K: '#579BBE',
 			L: '#942593',
@@ -55,11 +55,13 @@ export function getVehicleColorForAgency(
 	};
 
 	const agencyColorMap: Record<string, string> = {
-		'san francisco muni': '#CD3545',
+		'san francisco municipal transportation agency': '#CD3545',
 		samtrans: '#00529B',
+		'golden gate ferry': '#426C3E',
 		'golden gate transit': '#426C3E',
 		caltrain: '#DB1734',
 		'ac transit': '#006B54',
+		'san francisco bay ferry': '#0A4E86',
 		'san francisco bay ferries': '#0A4E86',
 		'county connection': '#FFB944',
 		wheels: '#02354C',

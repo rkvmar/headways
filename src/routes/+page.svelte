@@ -4,6 +4,8 @@
 	import { mount } from 'svelte';
 
 	import Vehicle from '$lib/components/Vehicle.svelte';
+	import TopBar from '$lib/components/TopBar.svelte';
+	import VehiclePopup from '$lib/components/VehiclePopup.svelte';
 	import { getVehicleColorForAgency } from '$lib/utils/vehicleColors';
 
 	let mapContainer: HTMLDivElement;
@@ -31,7 +33,7 @@
 	let pinnedVehicleIds: string[] = $state([]);
 	let pinnedSnapshots: Record<string, PinnedVehicleSnapshot> = $state({});
 	let settingsOpen = $state(false);
-	let apiBaseUrl = $state('https://sfbay.pantographapp.com');
+	let apiBaseUrl = $state('http://localhost:8080');
 	let defaultLat = $state(DEFAULT_MAP_VIEW.lat);
 	let defaultLng = $state(DEFAULT_MAP_VIEW.lng);
 	let defaultZoom = $state(DEFAULT_MAP_VIEW.zoom);
@@ -54,6 +56,7 @@
 	interface TransitVehicle {
 		op_agency: number;
 		agency: number;
+		agency_code: string;
 		vehicle_id: string;
 		unique_id: string;
 		trip_id: string;
@@ -145,8 +148,8 @@
 		trip_short_name: string | null;
 		wheelchair_accessible: number;
 		bikes_allowed: number;
-		trip_start_time: string;
-		trip_end_time: string;
+		trip_start_time?: string;
+		trip_end_time?: string;
 		trip_headsign: string | null;
 	}
 
@@ -158,45 +161,67 @@
 
 	async function fetchAgencies(): Promise<void> {
 		try {
-			const response = await fetch(`${apiBaseUrl}/agencies`);
-			if (!response.ok) {
-				throw new Error(`HTTP error! status: ${response.status}`);
+			const [agenciesResponse, routesResponse] = await Promise.all([
+				fetch(`${apiBaseUrl}/datafeeds/agency`),
+				fetch(`${apiBaseUrl}/datafeeds/routes`)
+			]);
+
+			if (!agenciesResponse.ok || !routesResponse.ok) {
+				throw new Error(`HTTP error! agencies: ${agenciesResponse.status}, routes: ${routesResponse.status}`);
 			}
-			const data = await response.json();
+
+			const agenciesData = await agenciesResponse.json();
+			const routesData = await routesResponse.json();
 
 			agencies.clear();
 			routes.clear();
 
-			for (const [agencyId, agencyData] of Object.entries(data)) {
-				const id = parseInt(agencyId);
-				agencies.set(id, {
-					id,
-					name: agencyData.full_name || agencyData.short_name,
-					short_name: agencyData.short_name,
-					color: agencyData.color_scheme?.default?.[0] || '',
-					text_color: agencyData.color_scheme?.default?.[1] || '',
-					...agencyData
+			const agencyIdMap = new Map<string, number>();
+			let nextNumericId = 1;
+
+			for (const agency of agenciesData) {
+				const agencyCode = agency.agency_id;
+				const numericId = nextNumericId++;
+				agencyIdMap.set(agencyCode, numericId);
+
+				agencies.set(numericId, {
+					id: numericId,
+					code: agencyCode,
+					name: agency.agency_name,
+					short_name: agency.agency_id,
+					color: '',
+					text_color: '',
+					url: agency.agency_url,
+					timezone: agency.agency_timezone,
+					lang: agency.agency_lang,
+					phone: agency.agency_phone,
+					fare_url: agency.agency_fare_url,
+					email: agency.agency_email
 				});
 
-				if (L && map && !agencyLayers.has(id)) {
+				if (L && map && !agencyLayers.has(numericId)) {
 					const layerGroup = L.layerGroup().addTo(map);
-					agencyLayers.set(id, layerGroup);
+					agencyLayers.set(numericId, layerGroup);
 				}
+			}
 
-				if (agencyData.routes && Array.isArray(agencyData.routes)) {
-					for (const route of agencyData.routes) {
-						if (route.route_id) {
-							const routeKey = `${id}:${route.route_id}`;
-							routes.set(routeKey, {
-								route_id: route.route_id,
-								route_short_name: route.route_short_name,
-								route_long_name: route.route_long_name,
-								agency_id: id,
-								...route
-							});
-						}
-					}
-				}
+			for (const route of routesData) {
+				const agencyCode = route.agency_id;
+				const numericId = agencyIdMap.get(agencyCode);
+				if (!numericId) continue;
+
+				const routeKey = route.route_id;
+				routes.set(routeKey, {
+					route_id: route.route_id,
+					route_short_name: route.route_short_name,
+					route_long_name: route.route_long_name,
+					agency_id: numericId,
+					agency_code: agencyCode,
+					route_color: route.route_color,
+					route_text_color: route.route_text_color,
+					route_type: route.route_type,
+					...route
+				});
 			}
 		} catch (error) {
 			console.error('Error fetching agencies data:', error);
@@ -205,12 +230,98 @@
 
 	async function fetchTransitData(): Promise<TransitVehicle[]> {
 		try {
-			const response = await fetch(`${apiBaseUrl}/current`);
-			if (!response.ok) {
-				throw new Error(`HTTP error! status: ${response.status}`);
+			const [vehiclePositionsResponse, tripsResponse] = await Promise.all([
+				fetch(`${apiBaseUrl}/vehiclepositions`),
+				fetch(`${apiBaseUrl}/datafeeds/trips`)
+			]);
+
+			if (!vehiclePositionsResponse.ok || !tripsResponse.ok) {
+				throw new Error(`HTTP error! vehiclepositions: ${vehiclePositionsResponse.status}, trips: ${tripsResponse.status}`);
 			}
-			const data = await response.json();
-			const vehicles: TransitVehicle[] = data;
+
+			const vehiclePositionsData = await vehiclePositionsResponse.json();
+			const tripsData = await tripsResponse.json();
+
+			const tripMap = new Map<string, any>();
+			for (const trip of tripsData) {
+				tripMap.set(trip.trip_id, trip);
+			}
+
+			const agencyCodeToNumericId = new Map<string, number>();
+			for (const [numericId, agency] of agencies.entries()) {
+				if (agency.code) {
+					agencyCodeToNumericId.set(agency.code, numericId);
+				}
+			}
+
+			const vehicles: TransitVehicle[] = [];
+
+			for (const entity of vehiclePositionsData.entity || []) {
+				const vehicle = entity.vehicle;
+				if (!vehicle) continue;
+
+				const trip = vehicle.trip;
+				if (!trip || !trip.tripId) continue;
+
+				const tripInfo = tripMap.get(trip.tripId);
+				if (!tripInfo) continue;
+
+				const position = vehicle.position;
+				if (!position || !position.latitude || !position.longitude) continue;
+
+				const agencyCode = tripInfo.route_id?.split(':')[0] || trip.tripId?.split(':')[0];
+				const numericAgencyId = agencyCodeToNumericId.get(agencyCode) || 1;
+
+				const routeInfo = routes.get(tripInfo.route_id || trip.routeId || '');
+				const routeShortName = routeInfo?.route_short_name || tripInfo.route_id?.split(':')[1] || trip.routeId?.split(':')[1] || '';
+
+				const uniqueId = `${agencyCode}:${vehicle.vehicle?.id || entity.id}`;
+
+				vehicles.push({
+					op_agency: numericAgencyId,
+					agency: numericAgencyId,
+					agency_code: agencyCode,
+					vehicle_id: vehicle.vehicle?.id || entity.id,
+					unique_id: uniqueId,
+					trip_id: trip.tripId,
+					lat: position.latitude,
+					lon: position.longitude,
+					deviation: 0,
+					timestamp: vehicle.timestamp ? parseInt(vehicle.timestamp) : Date.now() / 1000,
+					is_anomaly: false,
+					next_stop_id: vehicle.stopId || '',
+					next_stop_seq: vehicle.currentStopSequence || 0,
+					next_stop_name: '',
+					current_headsign: tripInfo.trip_headsign || '',
+					occupancy: vehicle.occupancyStatus || null,
+					trip_type: '0',
+					car_count: null,
+					bearing: position.bearing || 0,
+					speed: position.speed || 0,
+					route_id: tripInfo.route_id || trip.routeId || '',
+					trip_headsign: tripInfo.trip_headsign || '',
+					service_id: tripInfo.service_id || '',
+					direction_id: trip.directionId !== undefined ? trip.directionId : tripInfo.direction_id || 0,
+					block_id: tripInfo.block_id || '',
+					block_name: tripInfo.block_id || null,
+					route_short_name: routeShortName,
+					shape_id: tripInfo.shape_id || '',
+					trip_start_timestamp: 0,
+					trip_start_seq: 0,
+					trip_end_seq: 0,
+					trip_short_name: tripInfo.trip_short_name || '',
+					min: 0,
+					max: 0,
+					year: 0,
+					make: '',
+					model: '',
+					fuel: '',
+					length: 0,
+					icon_code: '',
+					short_headsign: tripInfo.trip_headsign || ''
+				});
+			}
+
 			return vehicles;
 		} catch (error) {
 			console.error('Error fetching transit data:', error);
@@ -319,14 +430,55 @@
 
 	async function fetchBlockSchedule(agency: number, blockId: string, serviceId: string) {
 		try {
-			const response = await fetch(
-				`${apiBaseUrl}/schedules/block/${agency}/${encodeURIComponent(blockId)}?serviceID=${encodeURIComponent(serviceId)}`
-			);
-			if (!response.ok) {
-				throw new Error(`HTTP error! status: ${response.status}`);
+			const tripsResponse = await fetch(`${apiBaseUrl}/datafeeds/trips`);
+			if (!tripsResponse.ok) {
+				throw new Error(`HTTP error! trips: ${tripsResponse.status}`);
 			}
-			const data = await response.json();
-			return data as BlockScheduleResponse;
+			const tripsData = await tripsResponse.json();
+
+			const blockTrips = tripsData
+				.filter((t: any) => t.block_id === blockId && t.service_id === serviceId)
+				.sort((a: any, b: any) => {
+					const aTime = timeToMinutes(a.trip_start_time || '00:00:00') || 0;
+					const bTime = timeToMinutes(b.trip_start_time || '00:00:00') || 0;
+					return aTime - bTime;
+				});
+
+			if (blockTrips.length === 0) return null;
+
+			const schedule = blockTrips.map((trip: any) => ({
+				op_agency: agency,
+				gtfs_timestamp: Date.now(),
+				trip_id: trip.trip_id,
+				block_id: trip.block_id,
+				block_name: trip.block_id,
+				route_id: trip.route_id,
+				route_short_name: trip.route_id?.split(':')[1] || '',
+				direction_id: parseInt(trip.direction_id),
+				trip_start_stop_id: '',
+				trip_start_stop_name: '',
+				trip_end_stop_id: '',
+				trip_end_stop_name: '',
+				shape_id: trip.shape_id,
+				service_id: trip.service_id,
+				trip_short_name: trip.trip_short_name,
+				wheelchair_accessible: parseInt(trip.wheelchair_accessible || '0'),
+				bikes_allowed: parseInt(trip.bikes_allowed || '0'),
+				trip_start_time: trip.trip_start_time || '00:00:00',
+				trip_end_time: trip.trip_end_time || '00:00:00',
+				trip_headsign: trip.trip_headsign
+			}));
+
+			return {
+				block_info: {
+					op_agency: agency,
+					block_id: blockId,
+					service_id: serviceId,
+					gtfs_timestamp: Date.now()
+				},
+				schedule: schedule,
+				layover_times: []
+			} as BlockScheduleResponse;
 		} catch (error) {
 			console.error('Error fetching block schedule:', error);
 			return null;
@@ -561,7 +713,7 @@
 		const routeKey = routeShortName || '';
 
 		const routeLogoMap: Record<string, Record<string, string>> = {
-			'san francisco muni': {
+			'san francisco municipal transportation agency': {
 				J: `${basePath}/muni-j.png`,
 				K: `${basePath}/muni-k.png`,
 				L: `${basePath}/muni-l.png`,
@@ -592,12 +744,14 @@
 
 		const agencyLogoMap: Record<string, string> = {
 			//SFBAY
-			'san francisco muni': `${basePath}/muni.png`,
+			'san francisco municipal transportation agency': `${basePath}/muni.png`,
 			'ac transit': `${basePath}/ac-transit.png`,
 			vta: `${basePath}/vta.png`,
 			samtrans: `${basePath}/samtrans.png`,
+			'golden gate ferry': `${basePath}/golden-gate-transit.png`,
 			'golden gate transit': `${basePath}/golden-gate-transit.png`,
 			caltrain: `${basePath}/caltrain.png`,
+			'san francisco bay ferry': `${basePath}/sf-bay-ferry.png`,
 			'san francisco bay ferries': `${basePath}/sf-bay-ferry.png`,
 			'county connection': `${basePath}/county-connection.png`,
 			wheels: `${basePath}/wheels.png`,
@@ -628,12 +782,67 @@
 
 	async function fetchTripData(agency: number, tripId: string) {
 		try {
-			const response = await fetch(`${apiBaseUrl}/schedules/trip/${agency}/${tripId}`);
-			if (!response.ok) {
-				throw new Error(`HTTP error! status: ${response.status}`);
+			const [tripsResponse, stopTimesResponse, shapesResponse, stopsResponse] = await Promise.all([
+				fetch(`${apiBaseUrl}/datafeeds/trips`),
+				fetch(`${apiBaseUrl}/datafeeds/stop_times`),
+				fetch(`${apiBaseUrl}/datafeeds/shapes`),
+				fetch(`${apiBaseUrl}/datafeeds/stops`)
+			]);
+
+			if (!tripsResponse.ok || !stopTimesResponse.ok || !shapesResponse.ok || !stopsResponse.ok) {
+				throw new Error(`HTTP error! trips: ${tripsResponse.status}, stop_times: ${stopTimesResponse.status}, shapes: ${shapesResponse.status}, stops: ${stopsResponse.status}`);
 			}
-			const data = await response.json();
-			return data;
+
+			const [tripsData, stopTimesData, shapesData, stopsData] = await Promise.all([
+				tripsResponse.json(),
+				stopTimesResponse.json(),
+				shapesResponse.json(),
+				stopsResponse.json()
+			]);
+
+			const trip = tripsData.find((t: any) => t.trip_id === tripId);
+			if (!trip) return null;
+
+			const stopTimes = stopTimesData
+				.filter((st: any) => st.trip_id === tripId)
+				.sort((a: any, b: any) => parseInt(a.stop_sequence) - parseInt(b.stop_sequence));
+
+			const stopMap = new Map<string, any>();
+			for (const stop of stopsData) {
+				stopMap.set(stop.stop_id, stop);
+			}
+
+			const schedule = stopTimes.map((st: any) => {
+				const stop = stopMap.get(st.stop_id);
+				return {
+					stop_id: st.stop_id,
+					stop_name: stop?.stop_name || st.stop_id,
+					stop_lat: stop?.stop_lat,
+					stop_lon: stop?.stop_lon,
+					arrival_time: st.arrival_time,
+					departure_time: st.departure_time,
+					stop_sequence: parseInt(st.stop_sequence),
+					timepoint: st.timepoint === '1' || st.timepoint === 1
+				};
+			});
+
+			const shapePoints = shapesData
+				.filter((s: any) => s.shape_id === trip.shape_id)
+				.sort((a: any, b: any) => parseInt(a.shape_pt_sequence) - parseInt(b.shape_pt_sequence))
+				.map((s: any) => [parseFloat(s.shape_pt_lat), parseFloat(s.shape_pt_lon)]);
+
+			return {
+				trip_id: trip.trip_id,
+				route_id: trip.route_id,
+				service_id: trip.service_id,
+				trip_headsign: trip.trip_headsign,
+				direction_id: parseInt(trip.direction_id),
+				shape_id: trip.shape_id,
+				block_id: trip.block_id,
+				trip_short_name: trip.trip_short_name,
+				shape: shapePoints,
+				schedule: schedule
+			};
 		} catch (error) {
 			console.error('Error fetching trip data:', error);
 			return null;
@@ -723,7 +932,8 @@
 		const tempDiv = document.createElement('div');
 		const agency = agencies.get(vehicle.agency);
 
-		const routeKey = `${vehicle.agency}:${vehicle.route_id}`;
+		// route_id from trips is already in format "3D:370", routes map uses same format as key
+		const routeKey = vehicle.route_id;
 		const routeInfo = routes.get(routeKey);
 
 		// Debug: log route lookup for troubleshooting
@@ -793,7 +1003,7 @@
 
 		const query = searchQuery.toLowerCase();
 		const agency = agencies.get(vehicle.agency);
-		const routeKey = `${vehicle.agency}:${vehicle.route_id}`;
+		const routeKey = vehicle.route_id;
 		const routeInfo = routes.get(routeKey);
 
 		// Check route short name
@@ -1031,36 +1241,26 @@
 </svelte:head>
 
 <div class="map-container">
-	<div class="search-container">
-		<input
-			type="text"
-			bind:value={searchQuery}
-			oninput={handleSearchInput}
-			placeholder="Search routes, vehicles, agencies..."
-			class="search-input"
-		/>
-	</div>
-
-	<div class="settings-toggle">
-		<button class="settings-button" onclick={() => (settingsOpen = !settingsOpen)}>
-			{settingsOpen ? 'Close' : 'Settings'}
-		</button>
-	</div>
+	<TopBar
+		bind:searchQuery
+		{settingsOpen}
+		onSearchInput={handleSearchInput}
+		onToggleSettings={() => (settingsOpen = !settingsOpen)}
+	/>
 
 	{#if settingsOpen}
 		<div class="settings-panel">
 			<h3 class="settings-title">Settings</h3>
 			<div class="settings-group">
-				<label class="settings-label" for="api-region">API Region</label>
-				<select
-					id="api-region"
-					class="settings-select"
+				<label class="settings-label" for="api-base">API Base URL</label>
+				<input
+					id="api-base"
+					class="settings-input"
+					type="text"
 					bind:value={apiBaseUrl}
+					placeholder="http://localhost:8080"
 					onchange={handleApiBaseChange}
-				>
-					<option value="https://sfbay.pantographapp.com">SF Bay</option>
-					<option value="https://socal.pantographapp.com">SoCal</option>
-				</select>
+				/>
 			</div>
 
 			<div class="settings-group">
@@ -1143,140 +1343,32 @@
 	{/if}
 
 	{#if selectedVehicle}
-		{@const agency = agencies.get(selectedVehicle.agency)}
-		{@const routeInfo = routes.get(`${selectedVehicle.agency}:${selectedVehicle.route_id}`)}
-		{@const routeDisplay =
-			routeInfo && routeInfo.route_long_name
-				? `${routeInfo.route_short_name} - ${routeInfo.route_long_name}`
-				: selectedVehicle.route_short_name}
-		{@const ledNumber = selectedVehicle.route_short_name}
-		{@const ledDestination = selectedVehicle.trip_headsign || 'No destination'}
-		{@const agencyLogo = getAgencyLogo(agency, selectedVehicle)}
-
-		<div class="bottom-sheet" class:closing={isClosing}>
-			<button class="close-button" onclick={closeBottomSheet} aria-label="Close">×</button>
-			<button
-				class="pin-button"
-				onclick={() => togglePin(selectedVehicle)}
-				aria-label={isPinned(selectedVehicle) ? 'Unpin vehicle' : 'Pin vehicle'}
-			>
-				{isPinned(selectedVehicle) ? 'Unpin' : 'Pin'}
-			</button>
-
-			{#if agencyLogo}
-				<div class="logo-container">
-					<img src={agencyLogo} alt={agency?.name} class="agency-logo" />
-				</div>
-			{/if}
-
-			<!-- <div class="led-display">
-				<div class="led-number">{ledNumber}</div>
-				<div class="led-destination" bind:this={ledDestinationContainer}>
-					<div class="led-scroll" class:scrolling={shouldScroll}>
-						<span class="led-scroll-text" bind:this={ledDestinationText}>{ledDestination}</span>
-					</div>
-				</div>
-			</div> -->
-			<div class="route-info">
-				<h2 class="route-name">{routeDisplay}</h2>
-				<h3 class="headsign">{selectedVehicle.trip_headsign || 'No destination'}</h3>
-			</div>
-
-			<div class="vehicle-details">
-				<div class="detail-row">
-					<span class="detail-label">Vehicle:</span>
-					<span class="detail-value">{selectedVehicle.vehicle_id}</span>
-				</div>
-
-				{#if agency}
-					<div class="detail-row">
-						<span class="detail-label">Agency:</span>
-						<span class="detail-value">{agency.name}</span>
-					</div>
-				{/if}
-
-				{#if selectedVehicle.next_stop_name}
-					<div class="detail-row">
-						<span class="detail-label">Next Stop:</span>
-						<span class="detail-value">{selectedVehicle.next_stop_name}</span>
-					</div>
-				{/if}
-
-				{#if selectedVehicle.make && selectedVehicle.model}
-					<div class="detail-row">
-						<span class="detail-label">Vehicle Type:</span>
-						<span class="detail-value"
-							>{selectedVehicle.year} {selectedVehicle.make} {selectedVehicle.model}</span
-						>
-					</div>
-				{/if}
-
-				{#if selectedVehicle.speed}
-					<div class="detail-row">
-						<span class="detail-label">Speed:</span>
-						<span class="detail-value">{Math.round(selectedVehicle.speed)} mph</span>
-					</div>
-				{/if}
-			</div>
-
-			<div class="block-schedule">
-				<div class="block-schedule-header">
-					<h3 class="block-schedule-title">Block Schedule</h3>
-					<button
-						class="block-schedule-button"
-						onclick={() => loadBlockScheduleForVehicle(selectedVehicle)}
-						disabled={isLoadingBlockSchedule}
-					>
-						{isLoadingBlockSchedule ? 'Loading…' : blockSchedule ? 'Refresh' : 'Load'}
-					</button>
-				</div>
-				{#if blockScheduleError}
-					<div class="block-schedule-error">{blockScheduleError}</div>
-				{/if}
-				{#if blockSchedule && blockSchedule.schedule && blockSchedule.schedule.length > 0}
-					<div class="block-schedule-list">
-						{#each blockSchedule.schedule as entry, index (entry.trip_id)}
-							{@const cardColor = getVehicleColorForAgency(entry.route_short_name, agency?.name)}
-							{@const isActive = isCurrentBlock(
-								entry,
-								index,
-								blockSchedule.schedule,
-								blockSchedule.layover_times
-							)}
-							{@const tintColor = isActive ? hexToRgba(cardColor, 0.12) : ''}
-							<div
-								class="block-schedule-item"
-								class:active={isActive}
-								style={`border-left-color: ${cardColor};${isActive ? ' background-color: ' + tintColor + ';' : ''}`}
-							>
-								<div class="block-schedule-time">
-									{formatTime(entry.trip_start_time)} → {formatTime(entry.trip_end_time)}
-								</div>
-								<div class="block-schedule-headsign">
-									{entry.route_short_name}
-									{entry.trip_headsign || ''}
-								</div>
-								<div class="block-schedule-stops">
-									{entry.trip_start_stop_name} → {entry.trip_end_stop_name}
-								</div>
-							</div>
-							{#if blockSchedule.layover_times && blockSchedule.layover_times[index] != null && index < blockSchedule.schedule.length - 1}
-								<div class="block-schedule-layover-row">
-									Layover: {formatLayoverSeconds(blockSchedule.layover_times[index])}
-								</div>
-							{/if}
-						{/each}
-					</div>
-				{:else if isBlockScheduleOpen && !blockScheduleError && !isLoadingBlockSchedule}
-					<div class="block-schedule-empty">No block schedule available.</div>
-				{/if}
-			</div>
-		</div>
+		<VehiclePopup
+			{selectedVehicle}
+			{agencies}
+			{routes}
+			{isClosing}
+			{isLoadingBlockSchedule}
+			{blockSchedule}
+			{blockScheduleError}
+			{isBlockScheduleOpen}
+			{getAgencyLogo}
+			{getVehicleColorForAgency}
+			{isPinned}
+			{togglePin}
+			{closeBottomSheet}
+			{loadBlockScheduleForVehicle}
+			{formatTime}
+			{formatLayoverSeconds}
+			{isCurrentBlock}
+			{hexToRgba}
+		/>
 	{/if}
 </div>
 
 <style>
 	.map-container {
+		--top-bar-height: 56px;
 		width: 100vw;
 		height: 100vh;
 		margin: 0;
@@ -1284,49 +1376,10 @@
 		position: relative;
 	}
 
-	.search-container {
-		position: absolute;
-		top: 10px;
-		left: 50%;
-		transform: translateX(-50%);
-		z-index: 1002;
-		width: 90%;
-		max-width: 400px;
-	}
-
-	.search-input {
-		width: 100%;
-		padding: 12px 16px;
-		font-size: 16px;
-		border: none;
-		border-radius: 8px;
-		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-		outline: none;
-		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-	}
-
-	.settings-toggle {
-		position: absolute;
-		bottom: 10px;
-		left: 10px;
-		z-index: 1000;
-	}
-
-	.settings-button {
-		border: none;
-		background: white;
-		border-radius: 8px;
-		padding: 8px 12px;
-		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-		cursor: pointer;
-		font-weight: 600;
-		font-size: 12px;
-	}
-
 	.settings-panel {
 		position: absolute;
-		bottom: 52px;
-		left: 10px;
+		top: 56px;
+		right: 12px;
 		z-index: 1000;
 		width: 260px;
 		background: white;
@@ -1395,301 +1448,16 @@
 	}
 
 	.map {
-		width: 100%;
-		height: 100%;
-	}
-
-	.bottom-sheet {
-		position: fixed;
-		bottom: 0;
+		position: absolute;
+		top: var(--top-bar-height);
 		left: 0;
 		right: 0;
-		background: white;
-		border-radius: 16px 16px 0 0;
-		box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.3);
-		z-index: 1001;
-		padding: 20px;
-		max-height: 45vh;
-		overflow-y: auto;
-		animation: slideUp 0.2s ease-out;
-		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-		transition: height 0.2s ease-out;
-	}
-
-	.bottom-sheet.closing {
-		animation: slideDown 0.2s ease-out;
-	}
-
-	@keyframes slideUp {
-		from {
-			transform: translateY(100%);
-		}
-		to {
-			transform: translateY(0);
-		}
-	}
-
-	@keyframes slideDown {
-		from {
-			transform: translateY(0);
-		}
-		to {
-			transform: translateY(100%);
-		}
-	}
-
-	.close-button {
-		position: absolute;
-		top: 12px;
-		right: 12px;
-		width: 32px;
-		height: 32px;
-		border: none;
-		background: #f3f4f6;
-		border-radius: 50%;
-		font-size: 24px;
-		line-height: 1;
-		cursor: pointer;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		color: #6b7280;
-		transition: background 0.2s;
-		padding: 0;
-		font-family: Arial, sans-serif;
-	}
-
-	.close-button:hover {
-		background: #e5e7eb;
-	}
-
-	.logo-container {
-		text-align: center;
-		margin-bottom: 16px;
-	}
-
-	.agency-logo {
-		max-width: 100%;
-		max-height: 48px;
-		width: auto;
-		height: auto;
-	}
-
-	.route-info {
-		margin-bottom: 20px;
-		padding-bottom: 16px;
-		border-bottom: 1px solid #e5e7eb;
-	}
-	@font-face {
-		font-family: tenpixel;
-		src: url('$lib/assets/BusMatrixCondensed.otf');
-	}
-	.led-display {
-		width: 98%;
-		height: 100px;
-		background-color: #2d2b38;
-		color: #ce8a37;
-		font-family: tenpixel;
-		display: flex;
-		align-items: center;
-		gap: 12px;
-		padding: 0 12px;
-		border-radius: 10px;
-		overflow: hidden;
-	}
-	.led-number {
-		font-size: 80px;
-		line-height: 1;
-		white-space: nowrap;
-		flex: 0 0 auto;
-	}
-	.led-destination {
-		flex: 1 1 auto;
-		min-width: 0;
-		font-size: 80px;
-		line-height: 1;
-	}
-	.led-scroll {
-		overflow: hidden;
-		white-space: nowrap;
-		position: relative;
-	}
-	.led-scroll-text {
-		display: inline-block;
-	}
-	.led-scroll.scrolling .led-scroll-text {
-		padding-left: 100%;
-		animation: led-marquee 10s linear infinite;
-	}
-	@keyframes led-marquee {
-		0% {
-			transform: translateX(0);
-		}
-		100% {
-			transform: translateX(-100%);
-		}
-	}
-
-	.route-name {
-		font-size: 24px;
-		font-weight: 700;
-		margin: 0 0 8px 0;
-		color: #111827;
-	}
-
-	.headsign {
-		font-size: 18px;
-		font-weight: 500;
-		margin: 0;
-		color: #6b7280;
-	}
-
-	.vehicle-details {
-		display: flex;
-		flex-direction: column;
-		gap: 12px;
-	}
-
-	.detail-row {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: 8px 0;
-	}
-
-	.detail-label {
-		font-weight: 600;
-		color: #6b7280;
-		font-size: 14px;
-	}
-
-	.detail-value {
-		font-weight: 500;
-		color: #111827;
-		font-size: 14px;
-		text-align: right;
-	}
-
-	.block-schedule {
-		margin-top: 20px;
-		padding-top: 16px;
-		border-top: 1px solid #e5e7eb;
-		display: flex;
-		flex-direction: column;
-		gap: 12px;
-	}
-
-	.block-schedule-header {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 12px;
-	}
-
-	.block-schedule-title {
-		margin: 0;
-		font-size: 16px;
-		font-weight: 700;
-		color: #111827;
-	}
-
-	.block-schedule-button {
-		border: none;
-		background: #2563eb;
-		color: white;
-		border-radius: 8px;
-		padding: 6px 12px;
-		font-size: 12px;
-		font-weight: 600;
-		cursor: pointer;
-		white-space: nowrap;
-	}
-
-	.block-schedule-button:disabled {
-		background: #93c5fd;
-		cursor: default;
-	}
-
-	.block-schedule-error,
-	.block-schedule-empty {
-		font-size: 12px;
-		color: #b45309;
-		background: #fef3c7;
-		border-radius: 8px;
-		padding: 8px;
-	}
-
-	.block-schedule-list {
-		display: flex;
-		flex-direction: column;
-		gap: 10px;
-	}
-
-	.block-schedule-item {
-		padding: 10px;
-		border-radius: 10px;
-		border: 1px solid #e5e7eb;
-		border-left: 4px solid transparent;
-		background: #f9fafb;
-	}
-
-	.block-schedule-item.active {
-		background: transparent;
-		box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.15);
-	}
-
-	.block-schedule-layover-row {
-		margin: -4px 0 6px 0;
-		font-size: 11px;
-		font-weight: 600;
-		color: #6b7280;
-		padding-left: 6px;
-	}
-
-	.block-schedule-time {
-		font-size: 13px;
-		font-weight: 700;
-		color: #111827;
-	}
-
-	.block-schedule-headsign {
-		font-size: 12px;
-		color: #374151;
-		margin-top: 2px;
-	}
-
-	.block-schedule-stops {
-		font-size: 11px;
-		color: #6b7280;
-		margin-top: 2px;
-	}
-
-	.pin-button {
-		position: absolute;
-		top: 12px;
-		right: 52px;
-		height: 32px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		border: none;
-		background: #2563eb;
-		color: white;
-		border-radius: 999px;
-		padding: 0 12px;
-		font-size: 12px;
-		line-height: 1;
-		cursor: pointer;
-		font-weight: 600;
-	}
-
-	.pin-button:hover {
-		background: #1d4ed8;
+		bottom: 0;
 	}
 
 	.pinned-panel {
 		position: absolute;
-		top: 10px;
+		top: 66px;
 		right: 10px;
 		z-index: 1000;
 		width: 260px;

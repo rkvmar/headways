@@ -73,12 +73,6 @@
 	const routeNameToShortName: Record<string, string> = {
 		'Presidio GO South Hills': 'SH',
 		'Presidio GO Downtown': 'DT',
-		'Local Weekday': vehicle.vehicle_id.toString(),
-		'Local Weekend': vehicle.vehicle_id.toString(),
-		Limited: vehicle.vehicle_id.toString(),
-		Express: vehicle.vehicle_id.toString(),
-		'South County': vehicle.vehicle_id.toString(),
-		SMART: vehicle.vehicle_id.toString(),
 		'Blue Line': 'B',
 		'Green Line': 'G',
 		'Orange Line': 'O',
@@ -89,20 +83,20 @@
 		getVehicleColorForAgency(vehicle.route_short_name, agency?.name)
 	);
 
-	function getDisplayName(vehicle: VehicleProps, routeInfo?: RouteInfo): string {
-		if (routeNameToShortName[vehicle.route_short_name]) {
-			return routeNameToShortName[vehicle.route_short_name];
+	function getDisplayName(v: VehicleProps, routeInfo?: RouteInfo): string {
+		if (routeNameToShortName[v.route_short_name]) {
+			return routeNameToShortName[v.route_short_name];
 		}
-		if (vehicle.route_short_name.includes('Rapid')) {
-			return vehicle.route_short_name.replace('Rapid', '');
+		if (v.route_short_name?.includes('Rapid')) {
+			return v.route_short_name.replace('Rapid', '');
 		}
-		if (vehicle.route_short_name.includes('Line')) {
-			return vehicle.route_short_name.replace('Line', '');
+		if (v.route_short_name?.includes('Line')) {
+			return v.route_short_name.replace('Line', '');
 		}
 		if (routeInfo && routeInfo.route_short_name) {
 			return routeInfo.route_short_name;
 		}
-		return vehicle.route_short_name || '?';
+		return v.route_short_name || v.vehicle_id || '?';
 	}
 
 	const routeNumber = $derived(getDisplayName(vehicle, routeInfo));
