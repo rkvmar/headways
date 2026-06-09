@@ -28,6 +28,73 @@
 		layovers?: number[]
 	) => boolean = () => false;
 	export let hexToRgba: (hex: string, alpha: number) => string = () => '';
+
+	// Auto-load block schedule when popup opens
+	$: if (selectedVehicle?.trip_id) {
+		loadBlockScheduleForVehicle(selectedVehicle);
+	}
+
+	// Match the current trip within the block schedule
+	$: currentBlockEntry =
+		blockSchedule?.schedule?.find((entry: any) => entry.trip_id === selectedVehicle?.trip_id) ||
+		null;
+
+	// Trip origin and destination
+	$: tripOrigin = currentBlockEntry?.trip_start_stop_name || '';
+	$: tripDestination =
+		currentBlockEntry?.trip_end_stop_name || selectedVehicle?.trip_headsign || '';
+
+	// Compute trip progress as a percentage (0–100)
+	function timeToMinutes(timeStr: string): number | null {
+		if (!timeStr) return null;
+		const parts = timeStr.split(':');
+		if (parts.length < 2) return null;
+		const hours = parseInt(parts[0], 10);
+		const minutes = parseInt(parts[1], 10);
+		const seconds = parseInt(parts[2] || '0', 10);
+		if (isNaN(hours) || isNaN(minutes)) return null;
+		return hours * 60 + minutes + seconds / 60;
+	}
+
+	$: tripProgress = (() => {
+		if (!currentBlockEntry) return 0;
+		const start = timeToMinutes(currentBlockEntry.trip_start_time);
+		const end = timeToMinutes(currentBlockEntry.trip_end_time);
+		if (start == null || end == null || start === end) return 0;
+		const now = new Date();
+		const nowMinutes = now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60;
+		let adjustedNow = nowMinutes;
+		let adjustedStart = start;
+		let adjustedEnd = end;
+		// Handle trips that cross midnight
+		if (end < start) {
+			if (nowMinutes < start) {
+				adjustedNow = nowMinutes + 1440;
+			}
+			adjustedEnd = end + 1440;
+		}
+		const p = (adjustedNow - adjustedStart) / (adjustedEnd - adjustedStart);
+		return Math.min(100, Math.max(0, Math.round(p * 100)));
+	})();
+
+	// Format deviation (delay in seconds) into a human-readable string
+	$: deviationText = (() => {
+		const d = selectedVehicle?.deviation;
+		if (d == null) return '';
+		if (d === 0) return 'On time';
+		const absMin = Math.round(Math.abs(d) / 60);
+		if (absMin === 0) return d > 0 ? 'Late' : 'Early';
+		if (d > 0) return `${absMin}m late`;
+		return `${absMin}m early`;
+	})();
+
+	$: deviationClass = (() => {
+		const d = selectedVehicle?.deviation;
+		if (d == null) return '';
+		if (d === 0) return 'on-time';
+		if (d > 0) return 'late';
+		return 'early';
+	})();
 </script>
 
 {#if selectedVehicle}
@@ -71,91 +138,109 @@
 			</div>
 		</div>
 
-		<!-- <div class="route-info">
-			<h2 class="route-name">{routeDisplay}</h2>
-			<h3 class="headsign">{titleCaseHeadsign(selectedVehicle.trip_headsign) || 'No destination'}</h3>
-		</div> -->
+		<div class="status-box">
+			<div class="section-title">Status</div>
 
-		<div class="vehicle-details">
+			{#if selectedVehicle.next_stop_name}
+				<div class="detail-row">
+					<span class="detail-label">Next Stop</span>
+					<span class="detail-value">{selectedVehicle.next_stop_name}</span>
+				</div>
+			{/if}
+
+			<div class="progress-container">
+				<div class="progress-bar-bg">
+					<div class="progress-bar-fill" style="width: {tripProgress}%"></div>
+				</div>
+			</div>
+
+			<div class="status-rows">
+				{#if selectedVehicle.speed != null}
+					<div class="detail-row">
+						<span class="detail-label">Speed</span>
+						<span class="detail-value">{Math.round(selectedVehicle.speed)} mph</span>
+					</div>
+				{/if}
+
+				<div class="detail-row">
+					<span class="detail-label">Status</span>
+					<span class="detail-value {deviationClass}">{deviationText || 'No data'}</span>
+				</div>
+			</div>
+		</div>
+
+		<div class="vehicle-info-box">
+			<div class="section-title">Vehicle Info</div>
 			<div class="detail-row">
-				<span class="detail-label">Vehicle:</span>
+				<span class="detail-label">Vehicle</span>
 				<span class="detail-value">{selectedVehicle.vehicle_id}</span>
 			</div>
 
 			{#if agency}
 				<div class="detail-row">
-					<span class="detail-label">Agency:</span>
+					<span class="detail-label">Agency</span>
 					<span class="detail-value">{getReadableAgencyName(agency.name)}</span>
-				</div>
-			{/if}
-
-			{#if selectedVehicle.next_stop_name}
-				<div class="detail-row">
-					<span class="detail-label">Next Stop:</span>
-					<span class="detail-value">{selectedVehicle.next_stop_name}</span>
 				</div>
 			{/if}
 
 			{#if selectedVehicle.make && selectedVehicle.model}
 				<div class="detail-row">
-					<span class="detail-label">Vehicle Type:</span>
+					<span class="detail-label">Vehicle Type</span>
 					<span class="detail-value"
 						>{selectedVehicle.year} {selectedVehicle.make} {selectedVehicle.model}</span
 					>
 				</div>
 			{/if}
-
-			{#if selectedVehicle.speed}
-				<div class="detail-row">
-					<span class="detail-label">Speed:</span>
-					<span class="detail-value">{Math.round(selectedVehicle.speed)} mph</span>
-				</div>
-			{/if}
 		</div>
 
 		<div class="block-schedule">
-			<div class="block-schedule-header">
+			<button
+				class="block-schedule-header"
+				onclick={() => loadBlockScheduleForVehicle(selectedVehicle, true)}
+			>
 				<h3 class="block-schedule-title">Block Schedule</h3>
-			</div>
-			{#if blockScheduleError}
-				<div class="block-schedule-error">{blockScheduleError}</div>
-			{/if}
-			{#if blockSchedule && blockSchedule.schedule && blockSchedule.schedule.length > 0}
-				<div class="block-schedule-list">
-					{#each blockSchedule.schedule as entry, index (entry.trip_id)}
-						{@const cardColor = getVehicleColorForAgency(entry.route_short_name, agency?.name)}
-						{@const isActive = isCurrentBlock(
-							entry,
-							index,
-							blockSchedule.schedule,
-							blockSchedule.layover_times
-						)}
-						{@const tintColor = isActive ? hexToRgba(cardColor, 0.12) : ''}
-						<div
-							class="block-schedule-item"
-							class:active={isActive}
-							style={`border-left-color: ${cardColor};${isActive ? ' background-color: ' + tintColor + ';' : ''}`}
-						>
-							<div class="block-schedule-time">
-								{formatTime(entry.trip_start_time)} → {formatTime(entry.trip_end_time)}
+				<span class="block-schedule-arrow" class:open={isBlockScheduleOpen}>▶</span>
+			</button>
+			{#if isBlockScheduleOpen}
+				{#if blockScheduleError}
+					<div class="block-schedule-error">{blockScheduleError}</div>
+				{:else if blockSchedule && blockSchedule.schedule && blockSchedule.schedule.length > 0}
+					<div class="block-schedule-list">
+						{#each blockSchedule.schedule as entry, index (entry.trip_id)}
+							{@const cardColor = getVehicleColorForAgency(entry.route_short_name, agency?.name)}
+							{@const isActive = isCurrentBlock(
+								entry,
+								index,
+								blockSchedule.schedule,
+								blockSchedule.layover_times
+							)}
+							{@const tintColor = isActive ? hexToRgba(cardColor, 0.12) : ''}
+							<div
+								class="block-schedule-item"
+								class:active={isActive}
+								style={`border-left-color: ${cardColor};${isActive ? ' background-color: ' + tintColor + ';' : ''}`}
+							>
+								<div class="block-schedule-time">
+									{formatTime(entry.trip_start_time)} → {formatTime(entry.trip_end_time)}
+								</div>
+								<div class="block-schedule-headsign">
+									{entry.route_short_name}
+									{entry.route_long_name ? titleCase(entry.route_long_name) : ''}
+								</div>
+								<div class="block-schedule-stops">
+									{entry.trip_start_stop_name} → {entry.trip_end_stop_name}
+								</div>
 							</div>
-							<div class="block-schedule-headsign">
-								{entry.route_short_name}
-								{entry.route_long_name ? titleCase(entry.route_long_name) : ''}
-							</div>
-							<div class="block-schedule-stops">
-								{entry.trip_start_stop_name} → {entry.trip_end_stop_name}
-							</div>
-						</div>
-						{#if blockSchedule.layover_times && blockSchedule.layover_times[index] != null && index < blockSchedule.schedule.length - 1}
-							<div class="block-schedule-layover-row">
-								Layover: {formatLayoverSeconds(blockSchedule.layover_times[index])}
-							</div>
-						{/if}
-					{/each}
-				</div>
-			{:else if isBlockScheduleOpen && !blockScheduleError && !isLoadingBlockSchedule}
-				<div class="block-schedule-empty">No block schedule available.</div>
+							{#if blockSchedule.layover_times && blockSchedule.layover_times[index] != null && index < blockSchedule.schedule.length - 1}
+								<div class="block-schedule-layover-row">
+									Layover: {formatLayoverSeconds(blockSchedule.layover_times[index])}
+								</div>
+							{/if}
+						{/each}
+					</div>
+				{:else if !isLoadingBlockSchedule}
+					<div class="block-schedule-empty">No block schedule available.</div>
+				{/if}
 			{/if}
 		</div>
 	</div>
@@ -315,10 +400,86 @@
 		background: #e5e7eb;
 	}
 
-	.vehicle-details {
+	.status-box,
+	.vehicle-info-box {
+		background: #f9fafb;
+		border: 1px solid #e5e7eb;
+		border-radius: 10px;
+		padding: 12px;
+		margin-bottom: 12px;
+	}
+
+	.section-title {
+		font-size: 11px;
+		font-weight: 700;
+		color: #9ca3af;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		margin-bottom: 8px;
+	}
+
+	.trip-route {
 		display: flex;
-		flex-direction: column;
-		gap: 12px;
+		align-items: center;
+		gap: 6px;
+		font-size: 13px;
+		font-weight: 600;
+		color: #111827;
+		margin-bottom: 8px;
+		white-space: nowrap;
+		overflow: hidden;
+	}
+
+	.trip-endpoint {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.trip-destination {
+		color: #6b7280;
+	}
+
+	.trip-arrow {
+		flex-shrink: 0;
+		font-size: 11px;
+		color: #9ca3af;
+	}
+
+	.progress-container {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin-bottom: 8px;
+	}
+
+	.progress-bar-bg {
+		flex: 1;
+		height: 6px;
+		background: #e5e7eb;
+		border-radius: 3px;
+		overflow: hidden;
+	}
+
+	.progress-bar-fill {
+		height: 100%;
+		background: #2563eb;
+		border-radius: 3px;
+		transition: width 0.5s ease;
+	}
+
+	.progress-label {
+		font-size: 11px;
+		font-weight: 700;
+		color: #6b7280;
+		flex-shrink: 0;
+		width: 32px;
+		text-align: right;
+	}
+
+	.status-rows {
+		border-top: 1px solid #e5e7eb;
+		padding-top: 4px;
 	}
 
 	.detail-row {
@@ -341,6 +502,18 @@
 		text-align: right;
 	}
 
+	.detail-value.on-time {
+		color: #059669;
+	}
+
+	.detail-value.late {
+		color: #dc2626;
+	}
+
+	.detail-value.early {
+		color: #2563eb;
+	}
+
 	.block-schedule {
 		margin-top: 20px;
 		padding-top: 16px;
@@ -355,6 +528,22 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: 12px;
+		width: 100%;
+		background: none;
+		border: none;
+		padding: 0;
+		cursor: pointer;
+		color: inherit;
+		font: inherit;
+	}
+
+	.block-schedule-arrow {
+		font-size: 10px;
+		transition: transform 0.2s ease;
+	}
+
+	.block-schedule-arrow.open {
+		transform: rotate(90deg);
 	}
 
 	.block-schedule-title {

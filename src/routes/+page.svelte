@@ -29,6 +29,7 @@
 	let ledDestinationContainer: HTMLDivElement | null = null;
 	let ledDestinationText: HTMLSpanElement | null = null;
 	let shouldScroll = false;
+	let stopsById: Map<string, string> = $state(new Map());
 	const PINNED_STORAGE_KEY = 'headways:pinned-vehicles';
 	const SETTINGS_STORAGE_KEY = 'headways:settings';
 	const DEFAULT_MAP_VIEW = { lat: 37.7749, lng: -122.4194, zoom: 10 };
@@ -164,9 +165,10 @@
 
 	async function fetchAgencies(): Promise<void> {
 		try {
-			const [agenciesResponse, routesResponse] = await Promise.all([
+			const [agenciesResponse, routesResponse, stopsResponse] = await Promise.all([
 				fetch(`${apiBaseUrl}/datafeeds/agency`),
-				fetch(`${apiBaseUrl}/datafeeds/routes`)
+				fetch(`${apiBaseUrl}/datafeeds/routes`),
+				fetch(`${apiBaseUrl}/datafeeds/stops`)
 			]);
 
 			if (!agenciesResponse.ok || !routesResponse.ok) {
@@ -177,6 +179,14 @@
 
 			const agenciesData = await agenciesResponse.json();
 			const routesData = await routesResponse.json();
+			const stopsData = stopsResponse.ok ? await stopsResponse.json() : [];
+
+			stopsById.clear();
+			for (const stop of stopsData) {
+				if (stop.stop_id && stop.stop_name) {
+					stopsById.set(stop.stop_id, stop.stop_name);
+				}
+			}
 
 			agencies.clear();
 			routes.clear();
@@ -220,12 +230,12 @@
 					route_id: route.route_id,
 					route_short_name: route.route_short_name,
 					route_long_name: route.route_long_name,
-					agency_id: numericId,
 					agency_code: agencyCode,
 					route_color: route.route_color,
 					route_text_color: route.route_text_color,
 					route_type: route.route_type,
-					...route
+					...route,
+					agency_id: numericId
 				});
 			}
 		} catch (error) {
@@ -297,12 +307,12 @@
 					trip_id: trip.tripId,
 					lat: position.latitude,
 					lon: position.longitude,
-					deviation: 0,
+					deviation: vehicle.trip?.delay ?? 0,
 					timestamp: vehicle.timestamp ? parseInt(vehicle.timestamp) : Date.now() / 1000,
 					is_anomaly: false,
 					next_stop_id: vehicle.stopId || '',
 					next_stop_seq: vehicle.currentStopSequence || 0,
-					next_stop_name: '',
+					next_stop_name: vehicle.stopName || stopsById.get(vehicle.stopId || '') || '',
 					current_headsign: tripInfo.trip_headsign || '',
 					occupancy: vehicle.occupancyStatus || null,
 					trip_type: '0',
@@ -490,7 +500,13 @@
 		}
 	}
 
-	async function loadBlockScheduleForVehicle(vehicle: TransitVehicle) {
+	async function loadBlockScheduleForVehicle(vehicle: TransitVehicle, userToggle = false) {
+		// If user is toggling and schedule is already open, close it
+		if (userToggle && isBlockScheduleOpen) {
+			isBlockScheduleOpen = false;
+			return;
+		}
+
 		blockScheduleError = '';
 		isBlockScheduleOpen = true;
 
@@ -806,67 +822,38 @@
 
 	async function fetchTripData(agency: number, tripId: string) {
 		try {
-			const [tripsResponse, stopTimesResponse, shapesResponse, stopsResponse] = await Promise.all([
-				fetch(`${apiBaseUrl}/datafeeds/trips`),
-				fetch(`${apiBaseUrl}/datafeeds/stop_times`),
-				fetch(`${apiBaseUrl}/datafeeds/shapes`),
-				fetch(`${apiBaseUrl}/datafeeds/stops`)
-			]);
-
-			if (!tripsResponse.ok || !stopTimesResponse.ok || !shapesResponse.ok || !stopsResponse.ok) {
-				throw new Error(
-					`HTTP error! trips: ${tripsResponse.status}, stop_times: ${stopTimesResponse.status}, shapes: ${shapesResponse.status}, stops: ${stopsResponse.status}`
-				);
+			const response = await fetch(
+				`${apiBaseUrl}/tripdetail?trip_id=${encodeURIComponent(tripId)}`
+			);
+			if (!response.ok) {
+				throw new Error(`HTTP error! tripdetail: ${response.status}`);
 			}
+			const data = await response.json();
+			if (!data || !data.trip_id) return null;
 
-			const [tripsData, stopTimesData, shapesData, stopsData] = await Promise.all([
-				tripsResponse.json(),
-				stopTimesResponse.json(),
-				shapesResponse.json(),
-				stopsResponse.json()
-			]);
+			const schedule = (data.schedule || []).map((st: any) => ({
+				stop_id: st.stop_id,
+				stop_name: st.stop_name || st.stop_id,
+				stop_lat: st.stop_lat,
+				stop_lon: st.stop_lon,
+				arrival_time: st.arrival_time,
+				departure_time: st.departure_time,
+				stop_sequence: parseInt(st.stop_sequence),
+				timepoint: st.timepoint === '1' || st.timepoint === 1
+			}));
 
-			const trip = tripsData.find((t: any) => t.trip_id === tripId);
-			if (!trip) return null;
-
-			const stopTimes = stopTimesData
-				.filter((st: any) => st.trip_id === tripId)
-				.sort((a: any, b: any) => parseInt(a.stop_sequence) - parseInt(b.stop_sequence));
-
-			const stopMap = new Map<string, any>();
-			for (const stop of stopsData) {
-				stopMap.set(stop.stop_id, stop);
-			}
-
-			const schedule = stopTimes.map((st: any) => {
-				const stop = stopMap.get(st.stop_id);
-				return {
-					stop_id: st.stop_id,
-					stop_name: stop?.stop_name || st.stop_id,
-					stop_lat: stop?.stop_lat,
-					stop_lon: stop?.stop_lon,
-					arrival_time: st.arrival_time,
-					departure_time: st.departure_time,
-					stop_sequence: parseInt(st.stop_sequence),
-					timepoint: st.timepoint === '1' || st.timepoint === 1
-				};
-			});
-
-			const shapePoints = shapesData
-				.filter((s: any) => s.shape_id === trip.shape_id)
-				.sort((a: any, b: any) => parseInt(a.shape_pt_sequence) - parseInt(b.shape_pt_sequence))
-				.map((s: any) => [parseFloat(s.shape_pt_lat), parseFloat(s.shape_pt_lon)]);
+			const shape = (data.shape || []).map((c: [number, number]) => [c[0], c[1]]);
 
 			return {
-				trip_id: trip.trip_id,
-				route_id: trip.route_id,
-				service_id: trip.service_id,
-				trip_headsign: trip.trip_headsign,
-				direction_id: parseInt(trip.direction_id),
-				shape_id: trip.shape_id,
-				block_id: trip.block_id,
-				trip_short_name: trip.trip_short_name,
-				shape: shapePoints,
+				trip_id: data.trip_id,
+				route_id: data.route_id,
+				service_id: data.service_id,
+				trip_headsign: data.trip_headsign,
+				direction_id: parseInt(data.direction_id),
+				shape_id: data.shape_id,
+				block_id: data.block_id,
+				trip_short_name: data.trip_short_name,
+				shape: shape,
 				schedule: schedule
 			};
 		} catch (error) {
@@ -1191,6 +1178,9 @@
 			await fetchAgencies();
 			agenciesInterval = setInterval(fetchAgencies, 3000);
 
+			await updateTransitData();
+			updateInterval = setInterval(updateTransitData, 3000);
+
 			if (navigator.geolocation) {
 				navigator.geolocation.getCurrentPosition(
 					(position) => {
@@ -1215,9 +1205,6 @@
 					}
 				);
 			}
-
-			await updateTransitData();
-			updateInterval = setInterval(updateTransitData, 3000);
 		}
 	});
 
