@@ -33,36 +33,43 @@
 {#if selectedVehicle}
 	{@const agency = agencies.get(selectedVehicle.agency)}
 	{@const routeInfo = routes.get(selectedVehicle.route_id)}
-	{@const routeDisplay =
-		routeInfo && routeInfo.route_long_name
-			? `${routeInfo.route_short_name} - ${titleCase(routeInfo.route_long_name)}`
+	{@const agencyName = agency?.name?.toLowerCase() || ''}
+	{@const isTrain = agencyName === 'caltrain' || agencyName === 'sonoma marin area rail transit'}
+	{@const routeShortName =
+		isTrain && selectedVehicle.trip_short_name
+			? selectedVehicle.trip_short_name.replace('Trip ', '')
 			: selectedVehicle.route_short_name || ''}
+	{@const routeLongName = routeInfo?.route_long_name ? titleCase(routeInfo.route_long_name) : ''}
+	{@const headsign = titleCaseHeadsign(selectedVehicle.trip_headsign) || 'No destination'}
 	{@const agencyLogo = getAgencyLogo(agency, selectedVehicle)}
 
 	<div class="popup" class:closing={isClosing}>
 		<div class="header">
-			{#if agencyLogo}
-				<div class="logo-container">
-					<img src={agencyLogo} alt={agency?.name} class="agency-logo" />
+			<div class="header-top">
+				{#if agencyLogo}
+					<div class="logo-container">
+						<img src={agencyLogo} alt={agency?.name} class="agency-logo" />
+					</div>
+				{/if}
+				<div class="header-text">
+					<span class="route-short-name">{routeShortName}</span>
+					{#if routeLongName}
+						<div class="route-long-name">{routeLongName}</div>
+					{/if}
+					<div class="headsign">{headsign}</div>
 				</div>
-			{/if}
-			<div class="route-info">
-				<p class="route-name">{routeDisplay}</p>
-				<p class="headsign">
-					{titleCaseHeadsign(selectedVehicle.trip_headsign) ||
-						routeInfo?.route_long_name ||
-						'No destination'}
-				</p>
+				<div class="header-buttons">
+					<button
+						class="pin-button"
+						onclick={() => togglePin(selectedVehicle)}
+						aria-label={isPinned(selectedVehicle) ? 'Unpin vehicle' : 'Pin vehicle'}
+					>
+						{isPinned(selectedVehicle) ? 'Unpin' : 'Pin'}
+					</button>
+					<button class="close-button" onclick={closeBottomSheet} aria-label="Close">×</button>
+				</div>
 			</div>
 		</div>
-		<button class="close-button" onclick={closeBottomSheet} aria-label="Close">×</button>
-		<button
-			class="pin-button"
-			onclick={() => togglePin(selectedVehicle)}
-			aria-label={isPinned(selectedVehicle) ? 'Unpin vehicle' : 'Pin vehicle'}
-		>
-			{isPinned(selectedVehicle) ? 'Unpin' : 'Pin'}
-		</button>
 
 		<!-- <div class="route-info">
 			<h2 class="route-name">{routeDisplay}</h2>
@@ -109,13 +116,6 @@
 		<div class="block-schedule">
 			<div class="block-schedule-header">
 				<h3 class="block-schedule-title">Block Schedule</h3>
-				<button
-					class="block-schedule-button"
-					onclick={() => loadBlockScheduleForVehicle(selectedVehicle)}
-					disabled={isLoadingBlockSchedule}
-				>
-					{isLoadingBlockSchedule ? 'Loading…' : blockSchedule ? 'Refresh' : 'Load'}
-				</button>
 			</div>
 			{#if blockScheduleError}
 				<div class="block-schedule-error">{blockScheduleError}</div>
@@ -176,7 +176,6 @@
 		overflow-y: auto;
 		animation: slideRight 0.2s ease-out;
 		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-		/*transition: height 0.2s ease-out;*/
 	}
 
 	.popup.closing {
@@ -200,18 +199,101 @@
 			transform: translateX(-100%);
 		}
 	}
+
 	.header {
+		padding-bottom: 12px;
+		border-bottom: 1px solid #e5e7eb;
+		margin-bottom: 12px;
+	}
+
+	.header-top {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+	}
+
+	.logo-container {
+		width: 80px;
+		height: 50px;
+		flex-shrink: 0;
+	}
+
+	.agency-logo {
+		width: 100%;
+		height: 100%;
+		object-fit: contain;
+	}
+
+	.header-text {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+
+	.route-short-name {
+		font-size: 24px;
+		font-weight: 700;
+		color: #111827;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		height: 32px;
+		line-height: 32px;
+	}
+
+	.route-long-name {
+		font-size: 14px;
+		font-weight: 500;
+		color: #374151;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.headsign {
+		font-size: 12px;
+		font-weight: 500;
+		color: #6b7280;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.header-buttons {
 		display: flex;
 		flex-direction: row;
+		align-items: flex-end;
+		gap: 6px;
+		flex-shrink: 0;
+		position: absolute;
+		top: 20px;
+		right: 12px;
+		height: 32px;
+	}
+
+	.pin-button {
+		display: flex;
 		align-items: center;
-		justify-content: flex-start;
-		line-height: 0.9;
+		justify-content: center;
+		border: none;
+		background: #2563eb;
+		color: white;
+		border-radius: 999px;
+		padding: 0 12px;
+		font-size: 12px;
+		line-height: 1;
+		cursor: pointer;
+		font-weight: 600;
+		height: 32px;
+	}
+
+	.pin-button:hover {
+		background: #1d4ed8;
 	}
 
 	.close-button {
-		position: absolute;
-		top: 12px;
-		right: 12px;
 		width: 32px;
 		height: 32px;
 		border: none;
@@ -231,51 +313,6 @@
 
 	.close-button:hover {
 		background: #e5e7eb;
-	}
-
-	.logo-container {
-		text-align: center;
-		/*margin-bottom: 16px;*/
-		width: 60px;
-		height: 60px;
-		margin-right: 10px;
-		flex-shrink: 0;
-	}
-
-	.agency-logo {
-		width: 60px;
-		height: 60px;
-		object-fit: contain;
-	}
-
-	.route-info {
-		/*margin-bottom: 20px;*/
-		padding-bottom: 16px;
-		padding-right: 120px;
-		/*border-bottom: 1px solid #e5e7eb;*/
-		flex: 1;
-		min-width: 0;
-	}
-
-	.route-name {
-		font-size: 20px;
-		font-weight: 700;
-		margin: 0 0 8px 0;
-		color: #111827;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-
-	.headsign {
-		font-size: 12px;
-		font-weight: 500;
-		margin: 0;
-		color: #6b7280;
-		flex-shrink: 0;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
 	}
 
 	.vehicle-details {
@@ -325,23 +362,6 @@
 		font-size: 16px;
 		font-weight: 700;
 		color: #111827;
-	}
-
-	.block-schedule-button {
-		border: none;
-		background: #2563eb;
-		color: white;
-		border-radius: 8px;
-		padding: 6px 12px;
-		font-size: 12px;
-		font-weight: 600;
-		cursor: pointer;
-		white-space: nowrap;
-	}
-
-	.block-schedule-button:disabled {
-		background: #93c5fd;
-		cursor: default;
 	}
 
 	.block-schedule-error,
@@ -396,28 +416,5 @@
 		font-size: 11px;
 		color: #6b7280;
 		margin-top: 2px;
-	}
-
-	.pin-button {
-		position: absolute;
-		top: 12px;
-		right: 52px;
-		height: 32px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		border: none;
-		background: #2563eb;
-		color: white;
-		border-radius: 999px;
-		padding: 0 12px;
-		font-size: 12px;
-		line-height: 1;
-		cursor: pointer;
-		font-weight: 600;
-	}
-
-	.pin-button:hover {
-		background: #1d4ed8;
 	}
 </style>

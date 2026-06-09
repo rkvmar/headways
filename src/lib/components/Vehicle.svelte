@@ -76,6 +76,17 @@
 		'Blue Line': 'B',
 		'Green Line': 'G',
 		'Orange Line': 'O',
+		NBUS: 'N',
+		TBUS: 'T',
+		LBUS: 'L',
+		KBUS: 'K',
+		FBUS: 'F',
+		Hollis: 'H',
+		'Shell/Pow': 'SP',
+		'Lot D': 'D',
+		'A - AM': 'A',
+		'B - AM': 'B',
+		'C - AM': 'C',
 		Copper: 'C'
 	};
 
@@ -83,15 +94,35 @@
 		getVehicleColorForAgency(vehicle.route_short_name, agency?.name)
 	);
 
-	function getDisplayName(v: VehicleProps, routeInfo?: RouteInfo): string {
+	function isTrain(agency?: Agency): boolean {
+		if (!agency?.name) return false;
+		const name = agency.name.toLowerCase();
+		return ['caltrain', 'sonoma marin area rail transit', 'altamont corridor express'].includes(
+			name
+		);
+	}
+
+	function getDisplayName(v: VehicleProps, agency?: Agency, routeInfo?: RouteInfo): string {
+		if (isTrain(agency) && v.trip_short_name) {
+			return v.trip_short_name.replace('Trip ', '');
+		}
 		if (routeNameToShortName[v.route_short_name]) {
 			return routeNameToShortName[v.route_short_name];
 		}
 		if (v.route_short_name?.includes('Rapid')) {
-			return v.route_short_name.replace('Rapid', '');
+			return v.route_short_name.replace('Rapid', '').trim();
+		}
+		if (v.route_short_name?.includes('Express')) {
+			return v.route_short_name.replace('Express', '').trim();
 		}
 		if (v.route_short_name?.includes('Line')) {
-			return v.route_short_name.replace('Line', '');
+			return v.route_short_name.replace('Line', '').trim();
+		}
+		if (v.route_short_name?.includes('Trip')) {
+			return v.route_short_name.replace('Trip', '').trim();
+		}
+		if (v.route_short_name?.includes(' - AM')) {
+			return v.route_short_name.replace(' - AM', '').trim();
 		}
 		if (routeInfo && routeInfo.route_short_name) {
 			return routeInfo.route_short_name;
@@ -99,35 +130,41 @@
 		return v.route_short_name || v.vehicle_id || '?';
 	}
 
-	const routeNumber = $derived(getDisplayName(vehicle, routeInfo));
+	const routeNumber = $derived(getDisplayName(vehicle, agency, routeInfo));
 	const routeTooltip = $derived(
 		routeInfo && routeInfo.route_long_name
 			? `${routeInfo.route_short_name} - ${routeInfo.route_long_name}`
 			: vehicle.route_short_name
 	);
-	const isTrain: Boolean = [
-		'J',
-		'K',
-		'L',
-		'M',
-		'N',
-		'T',
-		'F',
-		'Blue Line',
-		'Green Line',
-		'Orange Line',
-		'Copper Line'
-	].includes(vehicle.route_short_name);
+	// const isTrain: Boolean = [
+	// 	'J',
+	// 	'K',
+	// 	'L',
+	// 	'M',
+	// 	'N',
+	// 	'T',
+	// 	'F',
+	// 	'Blue Line',
+	// 	'Green Line',
+	// 	'Orange Line',
+	// 	'Copper Line'
+	// ].includes(vehicle.route_short_name);
+
+	const fontSize = $derived(routeNumber.length > 3 ? '7px' : '10px');
 </script>
 
-<div class="vehicle" style="background-color: {backgroundColor};" title={routeTooltip}>
+<div
+	class="vehicle"
+	style="background-color: {backgroundColor}; font-size: {fontSize};"
+	title={routeTooltip}
+>
 	{routeNumber}
 </div>
 
 <style>
 	.vehicle {
 		width: 24px;
-		height: 24px;
+		height: 26px;
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -139,10 +176,11 @@
 		border-radius: 2px;
 		box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 		text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
-		border-radius: 2px;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 		box-sizing: border-box;
+		line-height: 1;
+		padding-bottom: 2px;
 	}
 </style>

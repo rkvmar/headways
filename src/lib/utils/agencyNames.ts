@@ -7,8 +7,11 @@ export const agencyNameMap: Record<string, string> = {
 	'ac transit': 'AC Transit',
 	petaluma: 'Petaluma Transit',
 	sonoma: 'Sonoma County Transit',
+	santarosa: 'Santa Rosa CityBus',
+	vacaville: 'City Coach',
 	'livermore amador valley transit authority': 'Wheels',
-	'sfo airport': 'SFO'
+	'sfo airport': 'SFO',
+	'dumbarton express consortium': 'Dumbarton Express'
 };
 
 export function getReadableAgencyName(agencyName: string | null | undefined): string {

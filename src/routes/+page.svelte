@@ -7,8 +7,8 @@
 	import TopBar from '$lib/components/TopBar.svelte';
 	import VehiclePopup from '$lib/components/VehiclePopup.svelte';
 	import { getVehicleColorForAgency } from '$lib/utils/vehicleColors';
-import { titleCaseHeadsign } from '$lib/utils/strings';
-import { getReadableAgencyName } from '$lib/utils/agencyNames';
+	import { titleCaseHeadsign } from '$lib/utils/strings';
+	import { getReadableAgencyName } from '$lib/utils/agencyNames';
 
 	let mapContainer: HTMLDivElement;
 	let map: any;
@@ -119,6 +119,7 @@ import { getReadableAgencyName } from '$lib/utils/agencyNames';
 		agency: number;
 		route_id: string;
 		route_short_name: string;
+		trip_short_name: string;
 		trip_headsign: string;
 		lat: number;
 		lon: number;
@@ -169,7 +170,9 @@ import { getReadableAgencyName } from '$lib/utils/agencyNames';
 			]);
 
 			if (!agenciesResponse.ok || !routesResponse.ok) {
-				throw new Error(`HTTP error! agencies: ${agenciesResponse.status}, routes: ${routesResponse.status}`);
+				throw new Error(
+					`HTTP error! agencies: ${agenciesResponse.status}, routes: ${routesResponse.status}`
+				);
 			}
 
 			const agenciesData = await agenciesResponse.json();
@@ -238,7 +241,9 @@ import { getReadableAgencyName } from '$lib/utils/agencyNames';
 			]);
 
 			if (!vehiclePositionsResponse.ok || !tripsResponse.ok) {
-				throw new Error(`HTTP error! vehiclepositions: ${vehiclePositionsResponse.status}, trips: ${tripsResponse.status}`);
+				throw new Error(
+					`HTTP error! vehiclepositions: ${vehiclePositionsResponse.status}, trips: ${tripsResponse.status}`
+				);
 			}
 
 			const vehiclePositionsData = await vehiclePositionsResponse.json();
@@ -275,7 +280,11 @@ import { getReadableAgencyName } from '$lib/utils/agencyNames';
 				const numericAgencyId = agencyCodeToNumericId.get(agencyCode) || 1;
 
 				const routeInfo = routes.get(tripInfo.route_id || trip.routeId || '');
-				const routeShortName = routeInfo?.route_short_name || tripInfo.route_id?.split(':')[1] || trip.routeId?.split(':')[1] || '';
+				const routeShortName =
+					routeInfo?.route_short_name ||
+					tripInfo.route_id?.split(':')[1] ||
+					trip.routeId?.split(':')[1] ||
+					'';
 
 				const uniqueId = `${agencyCode}:${vehicle.vehicle?.id || entity.id}`;
 
@@ -303,7 +312,8 @@ import { getReadableAgencyName } from '$lib/utils/agencyNames';
 					route_id: tripInfo.route_id || trip.routeId || '',
 					trip_headsign: tripInfo.trip_headsign || '',
 					service_id: tripInfo.service_id || '',
-					direction_id: trip.directionId !== undefined ? trip.directionId : tripInfo.direction_id || 0,
+					direction_id:
+						trip.directionId !== undefined ? trip.directionId : tripInfo.direction_id || 0,
 					block_id: tripInfo.block_id || '',
 					block_name: tripInfo.block_id || null,
 					route_short_name: routeShortName,
@@ -588,6 +598,7 @@ import { getReadableAgencyName } from '$lib/utils/agencyNames';
 			agency: vehicle.agency,
 			route_id: vehicle.route_id,
 			route_short_name: vehicle.route_short_name,
+			trip_short_name: vehicle.trip_short_name,
 			trip_headsign: vehicle.trip_headsign,
 			lat: vehicle.lat,
 			lon: vehicle.lon,
@@ -711,11 +722,18 @@ import { getReadableAgencyName } from '$lib/utils/agencyNames';
 			'san francisco municipal transportation agency': {
 				J: `${basePath}/muni-j.png`,
 				K: `${basePath}/muni-k.png`,
+				KBUS: `${basePath}/muni-k.png`,
 				L: `${basePath}/muni-l.png`,
+				LBUS: `${basePath}/muni-l.png`,
+				LOWL: `${basePath}/muni-l.png`,
 				M: `${basePath}/muni-m.png`,
 				N: `${basePath}/muni-n.png`,
+				NBUS: `${basePath}/muni-n.png`,
+				NOWL: `${basePath}/muni-n.png`,
 				T: `${basePath}/muni-t.png`,
-				F: `${basePath}/muni-f.png`
+				TBUS: `${basePath}/muni-t.png`,
+				F: `${basePath}/muni-f.png`,
+				FBUS: `${basePath}/muni-f.png`
 			},
 			'ac transit': {
 				'1T': `${basePath}/ac-tempo.png`
@@ -724,6 +742,9 @@ import { getReadableAgencyName } from '$lib/utils/agencyNames';
 				'Blue Line': `${basePath}/vta-blue.png`,
 				'Green Line': `${basePath}/vta-green.png`,
 				'Orange Line': `${basePath}/vta-orange.png`
+			},
+			'westcat (western contra costa)': {
+				Lynx: `${basePath}/lynx.png`
 			},
 			'san diego mts': {
 				'Blue Line': `${basePath}/mts-blue.png`,
@@ -749,16 +770,24 @@ import { getReadableAgencyName } from '$lib/utils/agencyNames';
 			'san francisco bay ferry': `${basePath}/sf-bay-ferry.png`,
 			'san francisco bay ferries': `${basePath}/sf-bay-ferry.png`,
 			'county connection': `${basePath}/county-connection.png`,
-			wheels: `${basePath}/wheels.png`,
-			'dumbarton express': `${basePath}/dumbarton-express.png`,
+			'livermore amador valley transit authority': `${basePath}/wheels.png`,
+			'dumbarton express consortium': `${basePath}/dumbarton-express.png`,
 			soltrans: `${basePath}/soltrans.png`,
-			'the vine': `${basePath}/the-vine.png`,
-			'sonoma county transit': `${basePath}/sonoma-county-transit.png`,
-			'santa rosa citybus': `${basePath}/santa-rosa-citybus.png`,
+			'vine transit': `${basePath}/the-vine.png`,
+			santarosa: `${basePath}/citybus.svg`,
 			'sonoma marin area rail transit': `${basePath}/smart.png`,
 			'tri delta transit': `${basePath}/tri-delta-transit.png`,
 			'fairfield and suisun transit': `${basePath}/fast.png`,
-			'santa rosa citybus': `${basePath}/citybus.svg`,
+			'presidio go': `${basePath}/presidigo.png`,
+			'westcat (western contra costa)': `${basePath}/westcat.png`,
+			sonoma: `${basePath}/sct.png`,
+			petaluma: `${basePath}/petaluma.jpg`,
+			vacaville: `${basePath}/city-coach.png`,
+			'marin transit': `${basePath}/marin.jpg`,
+			'sfo airport': `${basePath}/sfo.png`,
+			'altamont corridor express': `${basePath}/ace.png`,
+			'capitol corridor joint powers authority': `${basePath}/capitol-corridor.jpg`,
+
 			//SOCAL
 			'san diego mts': `${basePath}/mts.png`,
 			'north county transit district': `${basePath}/nctd.png`,
@@ -785,7 +814,9 @@ import { getReadableAgencyName } from '$lib/utils/agencyNames';
 			]);
 
 			if (!tripsResponse.ok || !stopTimesResponse.ok || !shapesResponse.ok || !stopsResponse.ok) {
-				throw new Error(`HTTP error! trips: ${tripsResponse.status}, stop_times: ${stopTimesResponse.status}, shapes: ${shapesResponse.status}, stops: ${stopsResponse.status}`);
+				throw new Error(
+					`HTTP error! trips: ${tripsResponse.status}, stop_times: ${stopTimesResponse.status}, shapes: ${shapesResponse.status}, stops: ${stopsResponse.status}`
+				);
 			}
 
 			const [tripsData, stopTimesData, shapesData, stopsData] = await Promise.all([
@@ -927,13 +958,10 @@ import { getReadableAgencyName } from '$lib/utils/agencyNames';
 		const tempDiv = document.createElement('div');
 		const agency = agencies.get(vehicle.agency);
 
-		// route_id from trips is already in format "3D:370", routes map uses same format as key
 		const routeKey = vehicle.route_id;
 		const routeInfo = routes.get(routeKey);
 
-		// Debug: log route lookup for troubleshooting
 		if (!routeInfo && Math.random() < 0.01) {
-			// Log 1% of missing routes to avoid spam
 			console.log(
 				`Route not found for key: ${routeKey}, available keys:`,
 				Array.from(routes.keys()).slice(0, 10)
@@ -1320,13 +1348,20 @@ import { getReadableAgencyName } from '$lib/utils/agencyNames';
 									{displayVehicle.vehicle_id}
 								</div>
 								<div class="pinned-route">
-									{displayVehicle.route_short_name || displayVehicle.vehicle_id}
+									{agency?.name?.toLowerCase() === 'caltrain' ||
+									agency?.name?.toLowerCase() === 'sonoma marin area rail transit'
+										? (displayVehicle.trip_short_name || '').replace('Trip ', '') ||
+											displayVehicle.route_short_name
+										: displayVehicle.route_short_name || displayVehicle.vehicle_id}
 								</div>
 								<div class="pinned-headsign">
 									{titleCaseHeadsign(displayVehicle.trip_headsign) || 'No destination'}
 								</div>
 								<div class="pinned-meta">
-									<span>{getReadableAgencyName(agency?.short_name || agency?.name) || 'Unknown agency'}</span>
+									<span
+										>{getReadableAgencyName(agency?.short_name || agency?.name) ||
+											'Unknown agency'}</span
+									>
 									<span class:stale={!liveVehicle}>{liveVehicle ? 'Live' : 'Last seen'}</span>
 								</div>
 							</button>
