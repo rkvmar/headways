@@ -7,6 +7,8 @@
 	import TopBar from '$lib/components/TopBar.svelte';
 	import VehiclePopup from '$lib/components/VehiclePopup.svelte';
 	import { getVehicleColorForAgency } from '$lib/utils/vehicleColors';
+import { titleCaseHeadsign } from '$lib/utils/strings';
+import { getReadableAgencyName } from '$lib/utils/agencyNames';
 
 	let mapContainer: HTMLDivElement;
 	let map: any;
@@ -428,52 +430,45 @@
 		isBlockScheduleOpen = false;
 	}
 
-	async function fetchBlockSchedule(agency: number, blockId: string, serviceId: string) {
+	async function fetchBlockSchedule(vehicle: TransitVehicle) {
 		try {
-			const tripsResponse = await fetch(`${apiBaseUrl}/datafeeds/trips`);
-			if (!tripsResponse.ok) {
-				throw new Error(`HTTP error! trips: ${tripsResponse.status}`);
+			const url = `${apiBaseUrl}/blockschedule?trip_id=${encodeURIComponent(vehicle.trip_id)}`;
+
+			const response = await fetch(url);
+			if (!response.ok) {
+				throw new Error(`HTTP error! ${response.status}`);
 			}
-			const tripsData = await tripsResponse.json();
+			const data = await response.json();
 
-			const blockTrips = tripsData
-				.filter((t: any) => t.block_id === blockId && t.service_id === serviceId)
-				.sort((a: any, b: any) => {
-					const aTime = timeToMinutes(a.trip_start_time || '00:00:00') || 0;
-					const bTime = timeToMinutes(b.trip_start_time || '00:00:00') || 0;
-					return aTime - bTime;
-				});
-
-			if (blockTrips.length === 0) return null;
-
-			const schedule = blockTrips.map((trip: any) => ({
-				op_agency: agency,
+			const schedule = data.schedule.map((entry: any) => ({
+				op_agency: vehicle.agency,
 				gtfs_timestamp: Date.now(),
-				trip_id: trip.trip_id,
-				block_id: trip.block_id,
-				block_name: trip.block_id,
-				route_id: trip.route_id,
-				route_short_name: trip.route_id?.split(':')[1] || '',
-				direction_id: parseInt(trip.direction_id),
+				trip_id: entry.trip_id,
+				block_id: entry.block_id || vehicle.block_id,
+				block_name: entry.block_id || vehicle.block_id,
+				route_id: entry.route_id,
+				route_short_name: entry.route_short_name,
+				route_long_name: entry.route_long_name,
+				direction_id: parseInt(entry.direction_id),
 				trip_start_stop_id: '',
-				trip_start_stop_name: '',
+				trip_start_stop_name: entry.start_stop_name || '',
 				trip_end_stop_id: '',
-				trip_end_stop_name: '',
-				shape_id: trip.shape_id,
-				service_id: trip.service_id,
-				trip_short_name: trip.trip_short_name,
-				wheelchair_accessible: parseInt(trip.wheelchair_accessible || '0'),
-				bikes_allowed: parseInt(trip.bikes_allowed || '0'),
-				trip_start_time: trip.trip_start_time || '00:00:00',
-				trip_end_time: trip.trip_end_time || '00:00:00',
-				trip_headsign: trip.trip_headsign
+				trip_end_stop_name: entry.end_stop_name || '',
+				shape_id: entry.shape_id,
+				service_id: data.block_info.service_id,
+				trip_short_name: '',
+				wheelchair_accessible: parseInt(entry.wheelchair_accessible || '0'),
+				bikes_allowed: parseInt(entry.bikes_allowed || '0'),
+				trip_start_time: entry.start_time || '00:00:00',
+				trip_end_time: entry.end_time || '00:00:00',
+				trip_headsign: entry.headsign
 			}));
 
 			return {
 				block_info: {
-					op_agency: agency,
-					block_id: blockId,
-					service_id: serviceId,
+					op_agency: vehicle.agency,
+					block_id: data.block_info.block_id,
+					service_id: data.block_info.service_id,
 					gtfs_timestamp: Date.now()
 				},
 				schedule: schedule,
@@ -489,14 +484,14 @@
 		blockScheduleError = '';
 		isBlockScheduleOpen = true;
 
-		if (!vehicle.block_id || !vehicle.service_id) {
+		if (!vehicle.trip_id) {
 			blockSchedule = null;
 			blockScheduleError = 'Block schedule unavailable for this vehicle.';
 			return;
 		}
 
 		isLoadingBlockSchedule = true;
-		const data = await fetchBlockSchedule(vehicle.agency, vehicle.block_id, vehicle.service_id);
+		const data = await fetchBlockSchedule(vehicle);
 		isLoadingBlockSchedule = false;
 
 		if (!data) {
@@ -1328,10 +1323,10 @@
 									{displayVehicle.route_short_name || displayVehicle.vehicle_id}
 								</div>
 								<div class="pinned-headsign">
-									{displayVehicle.trip_headsign || 'No destination'}
+									{titleCaseHeadsign(displayVehicle.trip_headsign) || 'No destination'}
 								</div>
 								<div class="pinned-meta">
-									<span>{agency?.short_name || agency?.name || 'Unknown agency'}</span>
+									<span>{getReadableAgencyName(agency?.short_name || agency?.name) || 'Unknown agency'}</span>
 									<span class:stale={!liveVehicle}>{liveVehicle ? 'Live' : 'Last seen'}</span>
 								</div>
 							</button>

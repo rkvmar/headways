@@ -1,4 +1,7 @@
 <script lang="ts">
+	import { titleCaseHeadsign, titleCase } from '$lib/utils/strings';
+	import { getReadableAgencyName } from '$lib/utils/agencyNames';
+
 	export let selectedVehicle: any | null = null;
 	export let agencies: Map<number, any>;
 	export let routes: Map<string, any>;
@@ -32,8 +35,8 @@
 	{@const routeInfo = routes.get(selectedVehicle.route_id)}
 	{@const routeDisplay =
 		routeInfo && routeInfo.route_long_name
-			? `${routeInfo.route_short_name} - ${routeInfo.route_long_name}`
-			: selectedVehicle.route_short_name}
+			? `${routeInfo.route_short_name} - ${titleCase(routeInfo.route_long_name)}`
+			: selectedVehicle.route_short_name || ''}
 	{@const agencyLogo = getAgencyLogo(agency, selectedVehicle)}
 
 	<div class="popup" class:closing={isClosing}>
@@ -44,8 +47,12 @@
 				</div>
 			{/if}
 			<div class="route-info">
-				<p class="route-name">{routeInfo?.route_short_name || selectedVehicle.route_short_name || '?'}</p>
-				<p class="headsign">{routeInfo?.route_long_name || selectedVehicle.trip_headsign || 'No destination'}</p>
+				<p class="route-name">{routeDisplay}</p>
+				<p class="headsign">
+					{titleCaseHeadsign(selectedVehicle.trip_headsign) ||
+						routeInfo?.route_long_name ||
+						'No destination'}
+				</p>
 			</div>
 		</div>
 		<button class="close-button" onclick={closeBottomSheet} aria-label="Close">×</button>
@@ -59,7 +66,7 @@
 
 		<!-- <div class="route-info">
 			<h2 class="route-name">{routeDisplay}</h2>
-			<h3 class="headsign">{selectedVehicle.trip_headsign || 'No destination'}</h3>
+			<h3 class="headsign">{titleCaseHeadsign(selectedVehicle.trip_headsign) || 'No destination'}</h3>
 		</div> -->
 
 		<div class="vehicle-details">
@@ -71,7 +78,7 @@
 			{#if agency}
 				<div class="detail-row">
 					<span class="detail-label">Agency:</span>
-					<span class="detail-value">{agency.name}</span>
+					<span class="detail-value">{getReadableAgencyName(agency.name)}</span>
 				</div>
 			{/if}
 
@@ -134,7 +141,7 @@
 							</div>
 							<div class="block-schedule-headsign">
 								{entry.route_short_name}
-								{entry.trip_headsign || ''}
+								{entry.route_long_name ? titleCase(entry.route_long_name) : ''}
 							</div>
 							<div class="block-schedule-stops">
 								{entry.trip_start_stop_name} → {entry.trip_end_stop_name}
@@ -230,20 +237,24 @@
 		text-align: center;
 		/*margin-bottom: 16px;*/
 		width: 60px;
+		height: 60px;
 		margin-right: 10px;
+		flex-shrink: 0;
 	}
 
 	.agency-logo {
-		width: 100%;
-		/*max-height: 48px;*/
-		/*width: auto;*/
-		height: auto;
+		width: 60px;
+		height: 60px;
+		object-fit: contain;
 	}
 
 	.route-info {
 		/*margin-bottom: 20px;*/
 		padding-bottom: 16px;
+		padding-right: 120px;
 		/*border-bottom: 1px solid #e5e7eb;*/
+		flex: 1;
+		min-width: 0;
 	}
 
 	.route-name {
@@ -251,6 +262,9 @@
 		font-weight: 700;
 		margin: 0 0 8px 0;
 		color: #111827;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
 	.headsign {
@@ -258,6 +272,10 @@
 		font-weight: 500;
 		margin: 0;
 		color: #6b7280;
+		flex-shrink: 0;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
 	.vehicle-details {

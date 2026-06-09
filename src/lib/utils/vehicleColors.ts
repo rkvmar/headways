@@ -13,11 +13,18 @@ export function getVehicleColorForAgency(
 		'san francisco municipal transportation agency': {
 			J: '#DF8719',
 			K: '#579BBE',
+			KBUS: '#579BBE',
 			L: '#942593',
+			LBUS: '#942593',
+			LOWL: '#942593',
 			M: '#03814E',
 			N: '#084E75',
+			NBUS: '#084E75',
+			NOWL: '#084E75',
 			T: '#D01245',
+			TBUS: '#D01245',
 			F: '#6D4300',
+			FBUS: '#6D4300',
 			PM: '#911515',
 			PH: '#911515',
 			CA: '#911515'
@@ -55,6 +62,7 @@ export function getVehicleColorForAgency(
 	};
 
 	const agencyColorMap: Record<string, string> = {
+		//SF
 		'san francisco municipal transportation agency': '#CD3545',
 		samtrans: '#00529B',
 		'golden gate ferry': '#426C3E',
@@ -64,16 +72,24 @@ export function getVehicleColorForAgency(
 		'san francisco bay ferry': '#0A4E86',
 		'san francisco bay ferries': '#0A4E86',
 		'county connection': '#FFB944',
-		wheels: '#02354C',
+		'livermore amador valley transit authority': '#02354C',
 		'dumbarton express': '#007AFF',
 		vta: '#4CB4E7',
 		soltrans: '#2C8736',
-		'the vine': '#E77342',
+		'vine transit': '#E77342',
 		'sonoma county transit': '#193888',
 		'santa rosa citybus': '#035B91',
 		'sonoma marin area rail transit': '#104432',
 		'tri delta transit': '#004B8F',
 		'fairfield and suisun transit': '#064F8F',
+		'emery go-round': '#FFA801',
+		'presidio go': '#1F4D25',
+		'marin transit': '#3DAE2B',
+		petaluma: '#3C5D9E',
+		'westcat (western contra costa)': '#0057A5',
+		sonoma: '#193888',
+		'sfo airport': '#009ADE',
+		//SoCal
 		'san diego mts': '#DE2B26',
 		'north county transit district': '#088C99',
 		'la metro': '#262626',
