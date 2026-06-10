@@ -15,7 +15,7 @@
 		routeShortName: string,
 		agencyName?: string
 	) => string = () => '#e5e7eb';
-	export let isPinned: (vehicle: any) => boolean = () => false;
+	export let pinnedVehicleIds: string[] = [];
 	export let togglePin: (vehicle: any) => void = () => {};
 	export let closeBottomSheet: () => void = () => {};
 	export let loadBlockScheduleForVehicle: (vehicle: any) => void = () => {};
@@ -28,6 +28,9 @@
 		layovers?: number[]
 	) => boolean = () => false;
 	export let hexToRgba: (hex: string, alpha: number) => string = () => '';
+	export let tripSchedule: any[] | null = null;
+
+	let isStopsOpen = false;
 
 	// Auto-load block schedule when popup opens
 	$: if (selectedVehicle?.trip_id) {
@@ -44,37 +47,19 @@
 	$: tripDestination =
 		currentBlockEntry?.trip_end_stop_name || selectedVehicle?.trip_headsign || '';
 
-	// Compute trip progress as a percentage (0–100)
-	function timeToMinutes(timeStr: string): number | null {
-		if (!timeStr) return null;
-		const parts = timeStr.split(':');
-		if (parts.length < 2) return null;
-		const hours = parseInt(parts[0], 10);
-		const minutes = parseInt(parts[1], 10);
-		const seconds = parseInt(parts[2] || '0', 10);
-		if (isNaN(hours) || isNaN(minutes)) return null;
-		return hours * 60 + minutes + seconds / 60;
-	}
+	// Sort stops by sequence and determine next stop index
+	$: sortedStops = tripSchedule
+		? [...tripSchedule].sort((a: any, b: any) => a.stop_sequence - b.stop_sequence)
+		: [];
 
-	$: tripProgress = (() => {
-		if (!currentBlockEntry) return 0;
-		const start = timeToMinutes(currentBlockEntry.trip_start_time);
-		const end = timeToMinutes(currentBlockEntry.trip_end_time);
-		if (start == null || end == null || start === end) return 0;
-		const now = new Date();
-		const nowMinutes = now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60;
-		let adjustedNow = nowMinutes;
-		let adjustedStart = start;
-		let adjustedEnd = end;
-		// Handle trips that cross midnight
-		if (end < start) {
-			if (nowMinutes < start) {
-				adjustedNow = nowMinutes + 1440;
-			}
-			adjustedEnd = end + 1440;
-		}
-		const p = (adjustedNow - adjustedStart) / (adjustedEnd - adjustedStart);
-		return Math.min(100, Math.max(0, Math.round(p * 100)));
+	$: nextStopIndex = (() => {
+		if (!selectedVehicle?.next_stop_seq || !sortedStops.length) return -1;
+		return sortedStops.findIndex((s: any) => s.stop_sequence === selectedVehicle.next_stop_seq);
+	})();
+
+	$: nextStopTime = (() => {
+		if (nextStopIndex < 0) return '';
+		return formatTime(sortedStops[nextStopIndex]?.arrival_time);
 	})();
 
 	// Format deviation (delay in seconds) into a human-readable string
@@ -129,9 +114,11 @@
 					<button
 						class="pin-button"
 						onclick={() => togglePin(selectedVehicle)}
-						aria-label={isPinned(selectedVehicle) ? 'Unpin vehicle' : 'Pin vehicle'}
+						aria-label={pinnedVehicleIds.includes(selectedVehicle.unique_id)
+							? 'Unpin vehicle'
+							: 'Pin vehicle'}
 					>
-						{isPinned(selectedVehicle) ? 'Unpin' : 'Pin'}
+						{pinnedVehicleIds.includes(selectedVehicle.unique_id) ? 'Unpin' : 'Pin'}
 					</button>
 					<button class="close-button" onclick={closeBottomSheet} aria-label="Close">×</button>
 				</div>
@@ -142,17 +129,30 @@
 			<div class="section-title">Status</div>
 
 			{#if selectedVehicle.next_stop_name}
-				<div class="detail-row">
-					<span class="detail-label">Next Stop</span>
-					<span class="detail-value">{selectedVehicle.next_stop_name}</span>
-				</div>
+				<button class="next-stop-header" onclick={() => (isStopsOpen = !isStopsOpen)}>
+					<span class="next-stop-label">Next Stop</span>
+					<span class="next-stop-value">
+						{selectedVehicle.next_stop_name}
+						{#if nextStopTime}
+							<span class="next-stop-time">{nextStopTime}</span>
+						{/if}
+						<span class="next-stop-arrow" class:open={isStopsOpen}>▶</span>
+					</span>
+				</button>
 			{/if}
 
-			<div class="progress-container">
-				<div class="progress-bar-bg">
-					<div class="progress-bar-fill" style="width: {tripProgress}%"></div>
+			{#if isStopsOpen && sortedStops.length > 0}
+				<div class="stops-list">
+					{#each sortedStops as stop, i (stop.stop_id || i)}
+						{@const isPassed = nextStopIndex >= 0 && i < nextStopIndex}
+						{@const isNext = nextStopIndex >= 0 && i === nextStopIndex}
+						<div class="stop-item" class:passed={isPassed} class:next={isNext}>
+							<span class="stop-name">{stop.stop_name}</span>
+							<span class="stop-time">{formatTime(stop.arrival_time)}</span>
+						</div>
+					{/each}
 				</div>
-			</div>
+			{/if}
 
 			<div class="status-rows">
 				{#if selectedVehicle.speed != null}
@@ -446,35 +446,91 @@
 		color: #9ca3af;
 	}
 
-	.progress-container {
+	.next-stop-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		width: 100%;
+		background: none;
+		border: none;
+		border-top: 1px solid #e5e7eb;
+		padding: 10px 0;
+		margin-top: 4px;
+		cursor: pointer;
+		color: inherit;
+		font: inherit;
+	}
+
+	.next-stop-label {
+		font-weight: 600;
+		color: #6b7280;
+		font-size: 14px;
+	}
+
+	.next-stop-value {
+		font-weight: 500;
+		color: #111827;
+		font-size: 14px;
+		text-align: right;
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+
+	.next-stop-time {
+		color: #9ca3af;
+		font-size: 12px;
+		font-weight: 400;
+	}
+
+	.next-stop-arrow {
+		font-size: 10px;
+		transition: transform 0.2s ease;
+		color: #9ca3af;
+	}
+
+	.next-stop-arrow.open {
+		transform: rotate(90deg);
+	}
+
+	.stops-list {
+		display: flex;
+		flex-direction: column;
+		margin-top: 6px;
+		max-height: 200px;
+		overflow-y: auto;
+		gap: 1px;
+	}
+
+	.stop-item {
 		display: flex;
 		align-items: center;
 		gap: 8px;
-		margin-bottom: 8px;
+		padding: 5px 6px;
+		font-size: 12px;
+		border-radius: 4px;
 	}
 
-	.progress-bar-bg {
+	.stop-item.passed {
+		opacity: 0.45;
+	}
+
+	.stop-item.next {
+		background: #eff6ff;
+		font-weight: 600;
+	}
+
+	.stop-name {
 		flex: 1;
-		height: 6px;
-		background: #e5e7eb;
-		border-radius: 3px;
 		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
-	.progress-bar-fill {
-		height: 100%;
-		background: #2563eb;
-		border-radius: 3px;
-		transition: width 0.5s ease;
-	}
-
-	.progress-label {
-		font-size: 11px;
-		font-weight: 700;
+	.stop-time {
 		color: #6b7280;
 		flex-shrink: 0;
-		width: 32px;
-		text-align: right;
+		font-size: 11px;
 	}
 
 	.status-rows {
@@ -500,6 +556,15 @@
 		color: #111827;
 		font-size: 14px;
 		text-align: right;
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+
+	.detail-time {
+		color: #9ca3af;
+		font-size: 12px;
+		font-weight: 400;
 	}
 
 	.detail-value.on-time {

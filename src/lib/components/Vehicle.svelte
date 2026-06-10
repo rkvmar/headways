@@ -84,6 +84,7 @@
 		Hollis: 'H',
 		'Shell/Pow': 'SP',
 		'Lot D': 'D',
+		'West Field Garage': 'WFG',
 		'A - AM': 'A',
 		'B - AM': 'B',
 		'C - AM': 'C',

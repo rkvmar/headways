@@ -46,6 +46,7 @@
 	let isLoadingBlockSchedule = $state(false);
 	let blockScheduleError = $state('');
 	let isBlockScheduleOpen = $state(false);
+	let tripSchedule: any[] | null = $state(null);
 
 	function updateLedScrollState() {
 		if (!ledDestinationContainer || !ledDestinationText) return;
@@ -881,6 +882,7 @@
 
 	function closeBottomSheet() {
 		isClosing = true;
+		tripSchedule = null;
 		clearTripLayers();
 		resetBlockScheduleState();
 		setTimeout(() => {
@@ -898,6 +900,8 @@
 
 		const tripData = await fetchTripData(vehicle.agency, vehicle.trip_id);
 		isLoadingTrip = false;
+
+		tripSchedule = tripData?.schedule || null;
 
 		if (!tripData) return;
 
@@ -1345,13 +1349,46 @@
 									{titleCaseHeadsign(displayVehicle.trip_headsign) || 'No destination'}
 								</div>
 								<div class="pinned-meta">
-									<span
-										>{getReadableAgencyName(agency?.short_name || agency?.name) ||
-											'Unknown agency'}</span
-									>
+									<span>{getReadableAgencyName(agency?.name) || 'Unknown agency'}</span>
+									{#if liveVehicle?.deviation != null}
+										{@const d = liveVehicle.deviation}
+										{@const absMin = Math.round(Math.abs(d) / 60)}
+										<span
+											class="pinned-deviation"
+											class:late={d > 0}
+											class:early={d < 0}
+											class:on-time={d === 0}
+										>
+											{d === 0
+												? 'On time'
+												: d > 0
+													? absMin === 0
+														? 'Late'
+														: `${absMin}m late`
+													: absMin === 0
+														? 'Early'
+														: `${absMin}m early`}
+										</span>
+									{/if}
 									<span class:stale={!liveVehicle}>{liveVehicle ? 'Live' : 'Last seen'}</span>
 								</div>
 							</button>
+							<button
+								class="pinned-remove"
+								onclick={(e) => {
+									e.stopPropagation();
+									unpinVehicleById(pinnedId);
+								}}
+								aria-label="Unpin vehicle"
+								><svg width="10" height="10" viewBox="0 0 10 10" fill="none"
+									><path
+										d="M1 1L9 9M9 1L1 9"
+										stroke="currentColor"
+										stroke-width="1.5"
+										stroke-linecap="round"
+									/></svg
+								></button
+							>
 						</div>
 					{/if}
 				{/each}
@@ -1371,7 +1408,7 @@
 			{isBlockScheduleOpen}
 			{getAgencyLogo}
 			{getVehicleColorForAgency}
-			{isPinned}
+			{pinnedVehicleIds}
 			{togglePin}
 			{closeBottomSheet}
 			{loadBlockScheduleForVehicle}
@@ -1379,6 +1416,7 @@
 			{formatLayoverSeconds}
 			{isCurrentBlock}
 			{hexToRgba}
+			{tripSchedule}
 		/>
 	{/if}
 </div>
@@ -1513,6 +1551,7 @@
 		display: flex;
 		align-items: center;
 		gap: 8px;
+		position: relative;
 	}
 
 	.pinned-main {
@@ -1555,15 +1594,39 @@
 		font-weight: 600;
 	}
 
+	.pinned-deviation.on-time {
+		color: #059669;
+	}
+
+	.pinned-deviation.late {
+		color: #dc2626;
+	}
+
+	.pinned-deviation.early {
+		color: #2563eb;
+	}
+
 	.pinned-remove {
-		background: #fee2e2;
-		border: 1px solid #fecaca;
-		color: #991b1b;
-		border-radius: 8px;
-		padding: 6px 8px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		position: absolute;
+		top: 4px;
+		right: 4px;
+		background: none;
+		border: none;
+		color: #9ca3af;
+		border-radius: 50%;
+		width: 20px;
+		height: 20px;
 		cursor: pointer;
-		font-size: 12px;
-		font-weight: 700;
+		padding: 0;
+		z-index: 1;
+	}
+
+	.pinned-remove:hover {
+		background: rgba(0, 0, 0, 0.06);
+		color: #374151;
 	}
 
 	:global(.leaflet-container) {
