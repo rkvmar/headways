@@ -1,12 +1,29 @@
 <script lang="ts">
 	export let searchQuery: string;
 	export let settingsOpen = false;
+	export let filtersOpen = false;
 	export let placeholder = 'Search routes, vehicles, agencies...';
 	export let onSearchInput: () => void = () => {};
 	export let onToggleSettings: () => void = () => {};
+	export let onToggleFilters: () => void = () => {};
+
+	let isSpinning = false;
+
+	function handleClick() {
+		isSpinning = true;
+		onToggleSettings();
+	}
+
+	function handleAnimationEnd() {
+		isSpinning = false;
+	}
 </script>
 
 <div class="top-bar">
+	<div class="logo">
+		<img src="/SVG/Logo_Transparent.svg" alt="Headways Logo" class="logo-img" />
+		<p>Headways</p>
+	</div>
 	<div class="search-container">
 		<input
 			type="text"
@@ -16,9 +33,20 @@
 			class="search-input"
 		/>
 	</div>
-	<button class="settings-button" onclick={onToggleSettings}>
-		{settingsOpen ? 'Close' : 'Settings'}
-	</button>
+	<div class="right-buttons">
+		<button class="topbar-button" onclick={onToggleFilters} aria-label="Filters">
+			<span class="material-symbols-outlined" class:active={filtersOpen}> tune </span>
+		</button>
+		<button class="topbar-button" onclick={handleClick} aria-label="Settings">
+			<span
+				class="material-symbols-outlined"
+				class:spinning={isSpinning}
+				onanimationend={handleAnimationEnd}
+			>
+				settings
+			</span>
+		</button>
+	</div>
 </div>
 
 <style>
@@ -53,21 +81,69 @@
 		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 	}
 
-	.settings-button {
+	.right-buttons {
 		position: absolute;
 		right: 10px;
-		border: none;
-		background: white;
-		border-radius: 8px;
-		padding: 10px 14px;
-		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-		cursor: pointer;
-		font-weight: 600;
-		font-size: 12px;
-		white-space: nowrap;
+		display: flex;
+		align-items: center;
+		gap: 2px;
 	}
 
-	.settings-button:active {
-		transform: translateY(1px);
+	.topbar-button {
+		border: none;
+		color: white;
+		background: none;
+		padding: 8px;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		opacity: 0.7;
+		transition: opacity 0.15s;
+	}
+
+	.topbar-button:hover {
+		opacity: 1;
+	}
+
+	.topbar-button .material-symbols-outlined {
+		font-size: 24px;
+	}
+
+	.topbar-button .material-symbols-outlined.active {
+		opacity: 1;
+	}
+
+	.topbar-button .material-symbols-outlined.spinning {
+		animation: spin 0.4s ease-out;
+	}
+
+	@keyframes spin {
+		from {
+			transform: rotate(0deg);
+		}
+		to {
+			transform: rotate(120deg);
+		}
+	}
+	.logo {
+		position: absolute;
+		left: 10px;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: left;
+		gap: 15px;
+		font-size: 30px;
+		font-weight: 600;
+		color: white;
+	}
+	.logo-img {
+		width: 40px;
+		height: 40px;
+	}
+
+	.logo p {
+		margin: 0;
 	}
 </style>

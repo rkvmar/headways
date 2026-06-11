@@ -67,8 +67,31 @@
 	let {
 		vehicle,
 		agency,
-		routeInfo
-	}: { vehicle: VehicleProps; agency?: Agency; routeInfo?: RouteInfo } = $props();
+		routeInfo,
+		colorMode = 'route'
+	}: {
+		vehicle: VehicleProps;
+		agency?: Agency;
+		routeInfo?: RouteInfo;
+		colorMode?: 'route' | 'timeliness';
+	} = $props();
+
+	function getTimelinessColor(deviation: number | null): string {
+		if (deviation == null) return '#9ca3af';
+		const absMin = Math.abs(deviation) / 60;
+		if (absMin < 0.5) return '#069b37';
+		if (deviation > 0) {
+			if (absMin < 2) return '#f4a609';
+			if (absMin < 5) return '#d8630f';
+			if (absMin < 10) return '#b50909';
+			return '#dc2626';
+		} else {
+			if (absMin < 2) return '#2e87f4';
+			if (absMin < 5) return '#1264e8';
+			if (absMin < 10) return '#134bc4';
+			return '#1d4ed8';
+		}
+	}
 
 	const routeNameToShortName: Record<string, string> = {
 		'Presidio GO South Hills': 'SH',
@@ -92,7 +115,9 @@
 	};
 
 	const backgroundColor = $derived(
-		getVehicleColorForAgency(vehicle.route_short_name, agency?.name)
+		colorMode === 'timeliness'
+			? getTimelinessColor(vehicle.deviation)
+			: getVehicleColorForAgency(vehicle.route_short_name, agency?.name)
 	);
 
 	function isTrain(agency?: Agency): boolean {

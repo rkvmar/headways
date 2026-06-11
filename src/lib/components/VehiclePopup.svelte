@@ -125,47 +125,43 @@
 			</div>
 		</div>
 
-		<div class="status-box">
-			<div class="section-title">Status</div>
+		{#if selectedVehicle.next_stop_name}
+			<button class="next-stop-header" onclick={() => (isStopsOpen = !isStopsOpen)}>
+				<span class="next-stop-label">Next Stop</span>
+				<span class="next-stop-value">
+					<span class="next-stop-name">{selectedVehicle.next_stop_name}</span>
+					{#if nextStopTime}
+						<span class="next-stop-time">{nextStopTime}</span>
+					{/if}
+					<span class="next-stop-arrow" class:open={isStopsOpen}>▶</span>
+				</span>
+			</button>
+		{/if}
 
-			{#if selectedVehicle.next_stop_name}
-				<button class="next-stop-header" onclick={() => (isStopsOpen = !isStopsOpen)}>
-					<span class="next-stop-label">Next Stop</span>
-					<span class="next-stop-value">
-						{selectedVehicle.next_stop_name}
-						{#if nextStopTime}
-							<span class="next-stop-time">{nextStopTime}</span>
-						{/if}
-						<span class="next-stop-arrow" class:open={isStopsOpen}>▶</span>
-					</span>
-				</button>
-			{/if}
-
-			{#if isStopsOpen && sortedStops.length > 0}
-				<div class="stops-list">
-					{#each sortedStops as stop, i (stop.stop_id || i)}
-						{@const isPassed = nextStopIndex >= 0 && i < nextStopIndex}
-						{@const isNext = nextStopIndex >= 0 && i === nextStopIndex}
-						<div class="stop-item" class:passed={isPassed} class:next={isNext}>
-							<span class="stop-name">{stop.stop_name}</span>
-							<span class="stop-time">{formatTime(stop.arrival_time)}</span>
-						</div>
-					{/each}
-				</div>
-			{/if}
-
-			<div class="status-rows">
-				{#if selectedVehicle.speed != null}
-					<div class="detail-row">
-						<span class="detail-label">Speed</span>
-						<span class="detail-value">{Math.round(selectedVehicle.speed)} mph</span>
+		{#if isStopsOpen && sortedStops.length > 0}
+			<div class="stops-list">
+				{#each sortedStops as stop, i (stop.stop_id || i)}
+					{@const isPassed = nextStopIndex >= 0 && i < nextStopIndex}
+					{@const isNext = nextStopIndex >= 0 && i === nextStopIndex}
+					<div class="stop-item" class:passed={isPassed} class:next={isNext}>
+						<span class="stop-name">{stop.stop_name}</span>
+						<span class="stop-time">{formatTime(stop.arrival_time)}</span>
 					</div>
-				{/if}
+				{/each}
+			</div>
+		{/if}
 
+		<div class="status-rows">
+			{#if selectedVehicle.speed != null}
 				<div class="detail-row">
-					<span class="detail-label">Status</span>
-					<span class="detail-value {deviationClass}">{deviationText || 'No data'}</span>
+					<span class="detail-label">Speed</span>
+					<span class="detail-value">{Math.round(selectedVehicle.speed)} mph</span>
 				</div>
+			{/if}
+
+			<div class="detail-row">
+				<span class="detail-label">Status</span>
+				<span class="detail-value {deviationClass}">{deviationText || 'No data'}</span>
 			</div>
 		</div>
 
@@ -315,6 +311,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 2px;
+		padding-right: 100px;
 	}
 
 	.route-short-name {
@@ -332,18 +329,14 @@
 		font-size: 14px;
 		font-weight: 500;
 		color: #374151;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
+		/*word-wrap: break-word;*/
 	}
 
 	.headsign {
 		font-size: 12px;
 		font-weight: 500;
 		color: #6b7280;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
+		/*word-wrap: break-word;*/
 	}
 
 	.header-buttons {
@@ -400,7 +393,6 @@
 		background: #e5e7eb;
 	}
 
-	.status-box,
 	.vehicle-info-box {
 		background: #f9fafb;
 		border: 1px solid #e5e7eb;
@@ -410,11 +402,11 @@
 	}
 
 	.section-title {
-		font-size: 11px;
+		font-size: 14px;
 		font-weight: 700;
-		color: #9ca3af;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
+		/*color: #9ca3af;*/
+		/*text-transform: uppercase;*/
+		/*letter-spacing: 0.05em;*/
 		margin-bottom: 8px;
 	}
 
@@ -459,12 +451,15 @@
 		cursor: pointer;
 		color: inherit;
 		font: inherit;
+		white-space: nowrap;
+		gap: 12px;
 	}
 
 	.next-stop-label {
 		font-weight: 600;
 		color: #6b7280;
 		font-size: 14px;
+		flex-shrink: 0;
 	}
 
 	.next-stop-value {
@@ -475,6 +470,14 @@
 		display: flex;
 		align-items: center;
 		gap: 6px;
+		min-width: 0;
+		overflow: hidden;
+	}
+
+	.next-stop-name {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.next-stop-time {

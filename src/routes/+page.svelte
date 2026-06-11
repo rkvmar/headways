@@ -32,10 +32,14 @@
 	let stopsById: Map<string, string> = $state(new Map());
 	const PINNED_STORAGE_KEY = 'headways:pinned-vehicles';
 	const SETTINGS_STORAGE_KEY = 'headways:settings';
-	const DEFAULT_MAP_VIEW = { lat: 37.7749, lng: -122.4194, zoom: 10 };
+	const DEFAULT_MAP_VIEW = { lat: 37.75063, lng: -122.43276, zoom: 10 };
 	let pinnedVehicleIds: string[] = $state([]);
 	let pinnedSnapshots: Record<string, PinnedVehicleSnapshot> = $state({});
 	let settingsOpen = $state(false);
+	let filtersOpen = $state(false);
+	let enabledAgencies: Set<number> | null = $state(null); // null = all enabled
+	let enabledRouteTypes: Set<number> | null = $state(null); // null = all enabled
+	let colorMode: 'route' | 'timeliness' = $state('route');
 	let apiBaseUrl = $state('http://localhost:8080');
 	let defaultLat = $state(DEFAULT_MAP_VIEW.lat);
 	let defaultLng = $state(DEFAULT_MAP_VIEW.lng);
@@ -551,6 +555,10 @@
 				defaultZoom = zoom;
 				hasSavedLocation = true;
 			}
+
+			if (parsed?.colorMode === 'route' || parsed?.colorMode === 'timeliness') {
+				colorMode = parsed.colorMode;
+			}
 		} catch (error) {
 			console.warn('Failed to load settings from storage:', error);
 		}
@@ -565,7 +573,8 @@
 					apiBaseUrl,
 					defaultLat,
 					defaultLng,
-					defaultZoom
+					defaultZoom,
+					colorMode
 				})
 			);
 		} catch (error) {
@@ -905,10 +914,14 @@
 
 		if (!tripData) return;
 
+		// Get the route color for coloring the line and stop markers
+		const agency = agencies.get(vehicle.agency);
+		const routeColor = getVehicleColorForAgency(vehicle.route_short_name, agency?.name);
+
 		if (tripData.shape && tripData.shape.length > 0) {
 			const routeCoords = tripData.shape.map((point: number[]) => [point[0], point[1]]);
 			const routeLine = L.polyline(routeCoords, {
-				color: '#2563eb',
+				color: routeColor,
 				weight: 5,
 				opacity: 0.7
 			}).addTo(map);
@@ -916,18 +929,33 @@
 		}
 
 		if (tripData.schedule && tripData.schedule.length > 0) {
-			tripData.schedule.forEach((stop: any, index: number) => {
+			// Sort stops by sequence to determine passed vs upcoming
+			const sortedSchedule = [...tripData.schedule].sort(
+				(a: any, b: any) => a.stop_sequence - b.stop_sequence
+			);
+			const nextSeq = vehicle.next_stop_seq;
+
+			sortedSchedule.forEach((stop: any, index: number) => {
 				if (stop.stop_lat && stop.stop_lon) {
 					const isFirstStop = index === 0;
-					const isLastStop = index === tripData.schedule.length - 1;
+					const isLastStop = index === sortedSchedule.length - 1;
+					const isPassed = nextSeq > 0 && stop.stop_sequence < nextSeq;
+					const markerSize = isFirstStop || isLastStop ? 22 : 18;
+					const stopColor = isPassed ? '#9ca3af' : routeColor;
+					const borderColor = isPassed ? '#9ca3af' : routeColor;
 
-					const stopMarker = L.circleMarker([stop.stop_lat, stop.stop_lon], {
-						radius: isFirstStop || isLastStop ? 6 : 4,
-						fillColor: isFirstStop ? '#10b981' : isLastStop ? '#10b981' : '#f59e0b',
-						color: isFirstStop ? '#059669' : isLastStop ? '#059669' : '#d97706',
-						weight: 2,
-						opacity: 1,
-						fillOpacity: 0.9
+					const flagSvg = `<svg width="${markerSize - 8}" height="${markerSize - 8}" viewBox="0 0 24 24" fill="${encodeURIComponent(stopColor)}" xmlns="http://www.w3.org/2000/svg"><path d="M14.4 6L14 4H5v17h2v-7h5.6l.4 2h7V6h-5.6z"/></svg>`;
+
+					const stopIcon = L.divIcon({
+						className: 'stop-marker',
+						html: `<div style="width:${markerSize}px;height:${markerSize}px;background:${isPassed ? '#f3f4f6' : 'white'};border:2px solid ${borderColor};display:flex;align-items:center;justify-content:center;border-radius:3px;box-shadow:0 1px 3px rgba(0,0,0,0.3);">${flagSvg}</div>`,
+						iconSize: [markerSize, markerSize],
+						iconAnchor: [markerSize / 2, markerSize / 2]
+					});
+
+					const stopMarker = L.marker([stop.stop_lat, stop.stop_lon], {
+						icon: stopIcon,
+						zIndexOffset: 1000
 					}).addTo(map);
 
 					stopMarker.bindPopup(`
@@ -960,7 +988,7 @@
 		}
 		const vehicleComponent = mount(Vehicle, {
 			target: tempDiv,
-			props: { vehicle, agency, routeInfo }
+			props: { vehicle, agency, routeInfo, colorMode }
 		});
 
 		return L.divIcon({
@@ -1012,6 +1040,88 @@
 		requestAnimationFrame(animate);
 	}
 
+	function matchesFilters(vehicle: TransitVehicle): boolean {
+		if (enabledAgencies && !enabledAgencies.has(vehicle.agency)) return false;
+
+		if (enabledRouteTypes) {
+			const routeInfo = routes.get(vehicle.route_id);
+			const routeType = routeInfo?.route_type != null ? parseInt(routeInfo.route_type) : null;
+			if (routeType != null && !enabledRouteTypes.has(routeType)) return false;
+		}
+
+		return true;
+	}
+
+	function toggleAgency(agencyId: number) {
+		if (!enabledAgencies) {
+			// Enable all agencies first, then disable this one
+			const allEnabled = new Set<number>();
+			for (const [id] of agencies) {
+				allEnabled.add(id);
+			}
+			allEnabled.delete(agencyId);
+			enabledAgencies = allEnabled;
+		} else if (enabledAgencies.has(agencyId)) {
+			if (enabledAgencies.size === 1) {
+				enabledAgencies = null; // re-enable all
+			} else {
+				const next = new Set(enabledAgencies);
+				next.delete(agencyId);
+				enabledAgencies = next;
+			}
+		} else {
+			const next = new Set(enabledAgencies);
+			next.add(agencyId);
+			enabledAgencies = next;
+		}
+		updateVehicleMarkers(allVehicles);
+	}
+
+	function toggleRouteType(routeType: number) {
+		if (!enabledRouteTypes) {
+			// Enable all, then disable this one
+			const allEnabled = new Set<number>();
+			for (const [, route] of routes) {
+				const rt = route.route_type != null ? parseInt(route.route_type) : null;
+				if (rt != null) allEnabled.add(rt);
+			}
+			allEnabled.delete(routeType);
+			enabledRouteTypes = allEnabled;
+		} else if (enabledRouteTypes.has(routeType)) {
+			if (enabledRouteTypes.size === 1) {
+				enabledRouteTypes = null;
+			} else {
+				const next = new Set(enabledRouteTypes);
+				next.delete(routeType);
+				enabledRouteTypes = next;
+			}
+		} else {
+			const next = new Set(enabledRouteTypes);
+			next.add(routeType);
+			enabledRouteTypes = next;
+		}
+		updateVehicleMarkers(allVehicles);
+	}
+
+	function isAgencyEnabled(agencyId: number): boolean {
+		return enabledAgencies === null || enabledAgencies.has(agencyId);
+	}
+
+	function isRouteTypeEnabled(routeType: number): boolean {
+		return enabledRouteTypes === null || enabledRouteTypes.has(routeType);
+	}
+
+	const routeTypeNames: Record<number, string> = {
+		0: 'Tram / Light Rail',
+		1: 'Subway / Metro',
+		2: 'Rail',
+		3: 'Bus',
+		4: 'Ferry',
+		5: 'Cable Car',
+		6: 'Gondola',
+		7: 'Funicular'
+	};
+
 	function matchesSearch(vehicle: TransitVehicle): boolean {
 		if (!searchQuery.trim()) return true;
 
@@ -1053,7 +1163,7 @@
 			return;
 		}
 
-		const filteredVehicles = vehicles.filter(matchesSearch);
+		const filteredVehicles = vehicles.filter((v) => matchesSearch(v) && matchesFilters(v));
 		const activeVehicles = new Set<string>();
 		const bounds = map.getBounds();
 
@@ -1235,6 +1345,10 @@
 
 <svelte:head>
 	<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+	<link
+		rel="stylesheet"
+		href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200"
+	/>
 	<link rel="manifest" href="/manifest.json" />
 	<meta name="apple-mobile-web-app-capable" content="yes" />
 	<meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -1258,14 +1372,22 @@
 	<TopBar
 		bind:searchQuery
 		{settingsOpen}
+		{filtersOpen}
 		onSearchInput={handleSearchInput}
-		onToggleSettings={() => (settingsOpen = !settingsOpen)}
+		onToggleSettings={() => {
+			settingsOpen = !settingsOpen;
+			if (settingsOpen) filtersOpen = false;
+		}}
+		onToggleFilters={() => {
+			filtersOpen = !filtersOpen;
+			if (filtersOpen) settingsOpen = false;
+		}}
 	/>
 
 	{#if settingsOpen}
 		<div class="settings-panel">
 			<h3 class="settings-title">Settings</h3>
-			<div class="settings-group">
+			<!-- <div class="settings-group">
 				<label class="settings-label" for="api-base">API Base URL</label>
 				<input
 					id="api-base"
@@ -1275,7 +1397,7 @@
 					placeholder="http://localhost:8080"
 					onchange={handleApiBaseChange}
 				/>
-			</div>
+			</div> -->
 
 			<div class="settings-group">
 				<label class="settings-label">Default Map Location</label>
@@ -1308,6 +1430,73 @@
 				<button class="settings-secondary" onclick={setDefaultLocationFromMap}>
 					Use Current View
 				</button>
+			</div>
+		</div>
+	{/if}
+
+	{#if filtersOpen}
+		<div class="filters-panel">
+			<h3 class="filters-title">Filters</h3>
+
+			<div class="filters-group">
+				<div class="filters-group-title">Color Vehicles</div>
+				<label class="filter-radio">
+					<input
+						type="radio"
+						name="colorMode"
+						value="route"
+						checked={colorMode === 'route'}
+						onchange={() => {
+							colorMode = 'route';
+							persistSettings();
+							updateVehicleMarkers(allVehicles);
+						}}
+					/>
+					<span>By Route</span>
+				</label>
+				<label class="filter-radio">
+					<input
+						type="radio"
+						name="colorMode"
+						value="timeliness"
+						checked={colorMode === 'timeliness'}
+						onchange={() => {
+							colorMode = 'timeliness';
+							persistSettings();
+							updateVehicleMarkers(allVehicles);
+						}}
+					/>
+					<span>By Timeliness</span>
+				</label>
+			</div>
+
+			<div class="filters-group">
+				<div class="filters-group-title">Route Type</div>
+				{#each Object.entries(routeTypeNames) as [typeStr, typeName]}
+					{@const typeNum = parseInt(typeStr)}
+					<label class="filter-checkbox">
+						<input
+							type="checkbox"
+							checked={isRouteTypeEnabled(typeNum)}
+							onchange={() => toggleRouteType(typeNum)}
+						/>
+						<span>{typeName}</span>
+					</label>
+				{/each}
+			</div>
+
+			<div class="filters-group">
+				<div class="filters-group-title">Agency</div>
+				{#each [...agencies.entries()] as [id, agency]}
+					<label class="filter-checkbox">
+						<input
+							type="checkbox"
+							checked={isAgencyEnabled(id)}
+							onchange={() => toggleAgency(id)}
+						/>
+						<span>{getReadableAgencyName(agency.name)}</span>
+					</label>
+				{/each}
 			</div>
 		</div>
 	{/if}
@@ -1502,6 +1691,76 @@
 		font-weight: 600;
 	}
 
+	.filters-panel {
+		position: absolute;
+		top: 56px;
+		right: 12px;
+		z-index: 1000;
+		width: 240px;
+		max-height: calc(100vh - 80px);
+		overflow-y: auto;
+		background: white;
+		border-radius: 12px;
+		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+		padding: 12px;
+		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+	}
+
+	.filters-title {
+		margin: 0 0 10px 0;
+		font-size: 14px;
+		font-weight: 700;
+		color: #111827;
+	}
+
+	.filters-group {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		margin-bottom: 12px;
+	}
+
+	.filters-group:last-child {
+		margin-bottom: 0;
+	}
+
+	.filters-group-title {
+		font-size: 12px;
+		font-weight: 600;
+		color: #6b7280;
+		margin-bottom: 2px;
+	}
+
+	.filter-checkbox {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		font-size: 13px;
+		color: #374151;
+		cursor: pointer;
+		padding: 3px 0;
+	}
+
+	.filter-checkbox input[type='checkbox'] {
+		margin: 0;
+		accent-color: #e24b4b;
+	}
+
+	.filter-radio {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		font-size: 13px;
+		color: #374151;
+		cursor: pointer;
+		padding: 3px 0;
+	}
+
+	.filter-radio input[type='radio'] {
+		margin: 0;
+		accent-color: #e24b4b;
+	}
+
 	.map {
 		position: absolute;
 		top: var(--top-bar-height);
@@ -1643,6 +1902,11 @@
 		background: transparent !important;
 		border: none !important;
 		z-index: 1000 !important;
+	}
+
+	:global(.stop-marker) {
+		background: transparent !important;
+		border: none !important;
 	}
 
 	:global(.leaflet-popup-content) {
