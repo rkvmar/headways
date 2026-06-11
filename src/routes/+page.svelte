@@ -6,6 +6,7 @@
 	import Vehicle from '$lib/components/Vehicle.svelte';
 	import TopBar from '$lib/components/TopBar.svelte';
 	import VehiclePopup from '$lib/components/VehiclePopup.svelte';
+	import { PUBLIC_API_BASE_URL } from '$env/static/public';
 	import { getVehicleColorForAgency } from '$lib/utils/vehicleColors';
 	import { titleCaseHeadsign } from '$lib/utils/strings';
 	import { getReadableAgencyName } from '$lib/utils/agencyNames';
@@ -40,7 +41,7 @@
 	let enabledAgencies: Set<number> | null = $state(null); // null = all enabled
 	let enabledRouteTypes: Set<number> | null = $state(null); // null = all enabled
 	let colorMode: 'route' | 'timeliness' = $state('route');
-	let apiBaseUrl = $state('http://localhost:8080');
+	let apiBaseUrl = $state(PUBLIC_API_BASE_URL);
 	let defaultLat = $state(DEFAULT_MAP_VIEW.lat);
 	let defaultLng = $state(DEFAULT_MAP_VIEW.lng);
 	let defaultZoom = $state(DEFAULT_MAP_VIEW.zoom);
