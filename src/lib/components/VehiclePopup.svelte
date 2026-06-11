@@ -186,6 +186,23 @@
 						>{selectedVehicle.year} {selectedVehicle.make} {selectedVehicle.model}</span
 					>
 				</div>
+				{#if selectedVehicle.fuel}
+					<div class="detail-row">
+						<span class="detail-label">Fuel</span>
+						<span class="detail-value">{selectedVehicle.fuel}</span>
+					</div>
+				{/if}
+				{#if selectedVehicle.length}
+					<div class="detail-row">
+						<span class="detail-label">Length</span>
+						<span class="detail-value">{selectedVehicle.length} ft</span>
+					</div>
+				{/if}
+			{:else}
+				<div class="detail-row">
+					<span class="detail-label">Vehicle Type</span>
+					<span class="detail-value unknown">Unknown</span>
+				</div>
 			{/if}
 		</div>
 
@@ -311,7 +328,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: 2px;
-		padding-right: 100px;
 	}
 
 	.route-short-name {
@@ -323,6 +339,7 @@
 		text-overflow: ellipsis;
 		height: 32px;
 		line-height: 32px;
+		padding-right: 100px;
 	}
 
 	.route-long-name {
@@ -580,6 +597,11 @@
 
 	.detail-value.early {
 		color: #2563eb;
+	}
+
+	.detail-value.unknown {
+		color: #9ca3af;
+		font-style: italic;
 	}
 
 	.block-schedule {

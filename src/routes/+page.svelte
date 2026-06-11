@@ -339,12 +339,12 @@
 					trip_short_name: tripInfo.trip_short_name || '',
 					min: 0,
 					max: 0,
-					year: 0,
-					make: '',
-					model: '',
-					fuel: '',
-					length: 0,
-					icon_code: '',
+					year: vehicle.vehicleYear || 0,
+					make: vehicle.vehicleMake || '',
+					model: vehicle.vehicleModel || '',
+					fuel: vehicle.vehicleFuel || '',
+					length: vehicle.vehicleLength || 0,
+					icon_code: vehicle.vehicleIconCode || '',
 					short_headsign: tripInfo.trip_headsign || ''
 				});
 			}
@@ -1117,9 +1117,7 @@
 		2: 'Rail',
 		3: 'Bus',
 		4: 'Ferry',
-		5: 'Cable Car',
-		6: 'Gondola',
-		7: 'Funicular'
+		5: 'Cable Car'
 	};
 
 	function matchesSearch(vehicle: TransitVehicle): boolean {
@@ -1130,23 +1128,17 @@
 		const routeKey = vehicle.route_id;
 		const routeInfo = routes.get(routeKey);
 
-		// Check route short name
 		if (vehicle.route_short_name?.toLowerCase().includes(query)) return true;
 
-		// Check route long name
 		if (routeInfo?.route_long_name?.toLowerCase().includes(query)) return true;
 
-		// Check vehicle ID
 		if (vehicle.vehicle_id?.toString().toLowerCase().includes(query)) return true;
 
-		// Check agency name
 		if (agency?.name?.toLowerCase().includes(query)) return true;
 		if (agency?.short_name?.toLowerCase().includes(query)) return true;
 
-		// Check headsign
 		if (vehicle.trip_headsign?.toLowerCase().includes(query)) return true;
 
-		// Check vehicle make and model
 		if (vehicle.make?.toLowerCase().includes(query)) return true;
 		if (vehicle.model?.toLowerCase().includes(query)) return true;
 
