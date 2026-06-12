@@ -47,10 +47,6 @@
 	let defaultZoom = $state(DEFAULT_MAP_VIEW.zoom);
 	let hasSavedLocation = $state(false);
 	let nowTick = $state(Date.now());
-	let blockSchedule: BlockScheduleResponse | null = $state(null);
-	let isLoadingBlockSchedule = $state(false);
-	let blockScheduleError = $state('');
-	let isBlockScheduleOpen = $state(false);
 	let tripSchedule: any[] | null = $state(null);
 
 	function updateLedScrollState() {
@@ -131,42 +127,6 @@
 		lat: number;
 		lon: number;
 		timestamp: number;
-	}
-
-	interface BlockScheduleInfo {
-		op_agency: number;
-		block_id: string;
-		service_id: string;
-		gtfs_timestamp: number;
-	}
-
-	interface BlockScheduleEntry {
-		op_agency: number;
-		gtfs_timestamp: number;
-		trip_id: string;
-		block_id: string;
-		block_name: string | null;
-		route_id: string;
-		route_short_name: string;
-		direction_id: number;
-		trip_start_stop_id: string;
-		trip_start_stop_name: string;
-		trip_end_stop_id: string;
-		trip_end_stop_name: string;
-		shape_id: string;
-		service_id: string;
-		trip_short_name: string | null;
-		wheelchair_accessible: number;
-		bikes_allowed: number;
-		trip_start_time?: string;
-		trip_end_time?: string;
-		trip_headsign: string | null;
-	}
-
-	interface BlockScheduleResponse {
-		block_info: BlockScheduleInfo;
-		schedule: BlockScheduleEntry[];
-		layover_times?: number[];
 	}
 
 	async function fetchAgencies(): Promise<void> {
@@ -366,15 +326,6 @@
 		return timeString;
 	}
 
-	function formatLayoverSeconds(seconds: number): string {
-		if (!Number.isFinite(seconds)) return '';
-		if (seconds < 60) {
-			return `${Math.round(seconds)} sec`;
-		}
-		const minutes = Math.round(seconds / 60);
-		return `${minutes} min`;
-	}
-
 	function hexToRgba(hex: string, alpha: number): string {
 		const normalized = hex.replace('#', '');
 		if (normalized.length !== 3 && normalized.length !== 6) {
@@ -404,136 +355,7 @@
 		return hours * 60 + minutes + normalizedSeconds / 60;
 	}
 
-	function isCurrentBlock(
-		entry: BlockScheduleEntry,
-		index: number,
-		schedule: BlockScheduleEntry[],
-		layovers?: number[]
-	): boolean {
-		const startMinutes = timeToMinutes(entry.trip_start_time);
-		const endMinutes = timeToMinutes(entry.trip_end_time);
-
-		if (startMinutes == null || endMinutes == null) {
-			return false;
-		}
-
-		const now = new Date(nowTick);
-		const nowMinutes = now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60;
-
-		const isWithinRange = (start: number, end: number) => {
-			if (end < start) {
-				return nowMinutes >= start || nowMinutes <= end;
-			}
-			return nowMinutes >= start && nowMinutes <= end;
-		};
-
-		if (isWithinRange(startMinutes, endMinutes)) {
-			return true;
-		}
-
-		const layoverSeconds = layovers?.[index];
-		if (Number.isFinite(layoverSeconds)) {
-			const layoverMinutes = (layoverSeconds as number) / 60;
-			const layoverEnd = (endMinutes + layoverMinutes) % 1440;
-			return isWithinRange(endMinutes, layoverEnd);
-		}
-
-		const nextEntry = schedule[index + 1];
-		if (nextEntry) {
-			const nextStart = timeToMinutes(nextEntry.trip_start_time);
-			if (nextStart != null) {
-				return isWithinRange(endMinutes, nextStart);
-			}
-		}
-
-		return false;
-	}
-
-	function resetBlockScheduleState() {
-		blockSchedule = null;
-		blockScheduleError = '';
-		isLoadingBlockSchedule = false;
-		isBlockScheduleOpen = false;
-	}
-
-	async function fetchBlockSchedule(vehicle: TransitVehicle) {
-		try {
-			const url = `${apiBaseUrl}/blockschedule?trip_id=${encodeURIComponent(vehicle.trip_id)}`;
-
-			const response = await fetch(url);
-			if (!response.ok) {
-				throw new Error(`HTTP error! ${response.status}`);
-			}
-			const data = await response.json();
-
-			const schedule = data.schedule.map((entry: any) => ({
-				op_agency: vehicle.agency,
-				gtfs_timestamp: Date.now(),
-				trip_id: entry.trip_id,
-				block_id: entry.block_id || vehicle.block_id,
-				block_name: entry.block_id || vehicle.block_id,
-				route_id: entry.route_id,
-				route_short_name: entry.route_short_name,
-				route_long_name: entry.route_long_name,
-				direction_id: parseInt(entry.direction_id),
-				trip_start_stop_id: '',
-				trip_start_stop_name: entry.start_stop_name || '',
-				trip_end_stop_id: '',
-				trip_end_stop_name: entry.end_stop_name || '',
-				shape_id: entry.shape_id,
-				service_id: data.block_info.service_id,
-				trip_short_name: '',
-				wheelchair_accessible: parseInt(entry.wheelchair_accessible || '0'),
-				bikes_allowed: parseInt(entry.bikes_allowed || '0'),
-				trip_start_time: entry.start_time || '00:00:00',
-				trip_end_time: entry.end_time || '00:00:00',
-				trip_headsign: entry.headsign
-			}));
-
-			return {
-				block_info: {
-					op_agency: vehicle.agency,
-					block_id: data.block_info.block_id,
-					service_id: data.block_info.service_id,
-					gtfs_timestamp: Date.now()
-				},
-				schedule: schedule,
-				layover_times: []
-			} as BlockScheduleResponse;
-		} catch (error) {
-			console.error('Error fetching block schedule:', error);
-			return null;
-		}
-	}
-
-	async function loadBlockScheduleForVehicle(vehicle: TransitVehicle, userToggle = false) {
-		// If user is toggling and schedule is already open, close it
-		if (userToggle && isBlockScheduleOpen) {
-			isBlockScheduleOpen = false;
-			return;
-		}
-
-		blockScheduleError = '';
-		isBlockScheduleOpen = true;
-
-		if (!vehicle.trip_id) {
-			blockSchedule = null;
-			blockScheduleError = 'Block schedule unavailable for this vehicle.';
-			return;
-		}
-
-		isLoadingBlockSchedule = true;
-		const data = await fetchBlockSchedule(vehicle);
-		isLoadingBlockSchedule = false;
-
-		if (!data) {
-			blockSchedule = null;
-			blockScheduleError = 'Unable to load block schedule.';
-			return;
-		}
-
-		blockSchedule = data;
-	}
+	function resetBlockScheduleState() {}
 
 	function loadSettingsFromStorage() {
 		if (!browser) return;
@@ -887,7 +709,6 @@
 		isClosing = false;
 		resetBlockScheduleState();
 		showTripRoute(vehicle);
-		loadBlockScheduleForVehicle(vehicle);
 	}
 
 	function closeBottomSheet() {
@@ -1607,19 +1428,12 @@
 			{agencies}
 			{routes}
 			{isClosing}
-			{isLoadingBlockSchedule}
-			{blockSchedule}
-			{blockScheduleError}
-			{isBlockScheduleOpen}
 			{getAgencyLogo}
 			{getVehicleColorForAgency}
 			{pinnedVehicleIds}
 			{togglePin}
 			{closeBottomSheet}
-			{loadBlockScheduleForVehicle}
 			{formatTime}
-			{formatLayoverSeconds}
-			{isCurrentBlock}
 			{hexToRgba}
 			{tripSchedule}
 		/>

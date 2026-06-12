@@ -6,10 +6,6 @@
 	export let agencies: Map<number, any>;
 	export let routes: Map<string, any>;
 	export let isClosing = false;
-	export let isLoadingBlockSchedule = false;
-	export let blockSchedule: any = null;
-	export let blockScheduleError = '';
-	export let isBlockScheduleOpen = false;
 	export let getAgencyLogo: (agency: any, vehicle: any) => string | null = () => null;
 	export let getVehicleColorForAgency: (
 		routeShortName: string,
@@ -18,34 +14,15 @@
 	export let pinnedVehicleIds: string[] = [];
 	export let togglePin: (vehicle: any) => void = () => {};
 	export let closeBottomSheet: () => void = () => {};
-	export let loadBlockScheduleForVehicle: (vehicle: any) => void = () => {};
 	export let formatTime: (time: string) => string = (time) => time;
-	export let formatLayoverSeconds: (seconds: number) => string = () => '';
-	export let isCurrentBlock: (
-		entry: any,
-		index: number,
-		schedule: any[],
-		layovers?: number[]
-	) => boolean = () => false;
 	export let hexToRgba: (hex: string, alpha: number) => string = () => '';
 	export let tripSchedule: any[] | null = null;
 
 	let isStopsOpen = false;
 
-	// Auto-load block schedule when popup opens
-	$: if (selectedVehicle?.trip_id) {
-		loadBlockScheduleForVehicle(selectedVehicle);
-	}
-
-	// Match the current trip within the block schedule
-	$: currentBlockEntry =
-		blockSchedule?.schedule?.find((entry: any) => entry.trip_id === selectedVehicle?.trip_id) ||
-		null;
-
 	// Trip origin and destination
-	$: tripOrigin = currentBlockEntry?.trip_start_stop_name || '';
-	$: tripDestination =
-		currentBlockEntry?.trip_end_stop_name || selectedVehicle?.trip_headsign || '';
+	$: tripOrigin = '';
+	$: tripDestination = selectedVehicle?.trip_headsign || '';
 
 	// Sort stops by sequence and determine next stop index
 	$: sortedStops = tripSchedule
@@ -59,7 +36,7 @@
 
 	$: nextStopTime = (() => {
 		if (nextStopIndex < 0) return '';
-		return formatTime(sortedStops[nextStopIndex]?.arrival_time);
+		return sortedStops[nextStopIndex]?.arrival_time || '';
 	})();
 
 	// Format deviation (delay in seconds) into a human-readable string
@@ -203,57 +180,6 @@
 					<span class="detail-label">Vehicle Type</span>
 					<span class="detail-value unknown">Unknown</span>
 				</div>
-			{/if}
-		</div>
-
-		<div class="block-schedule">
-			<button
-				class="block-schedule-header"
-				onclick={() => loadBlockScheduleForVehicle(selectedVehicle, true)}
-			>
-				<h3 class="block-schedule-title">Block Schedule</h3>
-				<span class="block-schedule-arrow" class:open={isBlockScheduleOpen}>▶</span>
-			</button>
-			{#if isBlockScheduleOpen}
-				{#if blockScheduleError}
-					<div class="block-schedule-error">{blockScheduleError}</div>
-				{:else if blockSchedule && blockSchedule.schedule && blockSchedule.schedule.length > 0}
-					<div class="block-schedule-list">
-						{#each blockSchedule.schedule as entry, index (entry.trip_id)}
-							{@const cardColor = getVehicleColorForAgency(entry.route_short_name, agency?.name)}
-							{@const isActive = isCurrentBlock(
-								entry,
-								index,
-								blockSchedule.schedule,
-								blockSchedule.layover_times
-							)}
-							{@const tintColor = isActive ? hexToRgba(cardColor, 0.12) : ''}
-							<div
-								class="block-schedule-item"
-								class:active={isActive}
-								style={`border-left-color: ${cardColor};${isActive ? ' background-color: ' + tintColor + ';' : ''}`}
-							>
-								<div class="block-schedule-time">
-									{formatTime(entry.trip_start_time)} → {formatTime(entry.trip_end_time)}
-								</div>
-								<div class="block-schedule-headsign">
-									{entry.route_short_name}
-									{entry.route_long_name ? titleCase(entry.route_long_name) : ''}
-								</div>
-								<div class="block-schedule-stops">
-									{entry.trip_start_stop_name} → {entry.trip_end_stop_name}
-								</div>
-							</div>
-							{#if blockSchedule.layover_times && blockSchedule.layover_times[index] != null && index < blockSchedule.schedule.length - 1}
-								<div class="block-schedule-layover-row">
-									Layover: {formatLayoverSeconds(blockSchedule.layover_times[index])}
-								</div>
-							{/if}
-						{/each}
-					</div>
-				{:else if !isLoadingBlockSchedule}
-					<div class="block-schedule-empty">No block schedule available.</div>
-				{/if}
 			{/if}
 		</div>
 	</div>
@@ -602,98 +528,5 @@
 	.detail-value.unknown {
 		color: #9ca3af;
 		font-style: italic;
-	}
-
-	.block-schedule {
-		margin-top: 20px;
-		padding-top: 16px;
-		border-top: 1px solid #e5e7eb;
-		display: flex;
-		flex-direction: column;
-		gap: 12px;
-	}
-
-	.block-schedule-header {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 12px;
-		width: 100%;
-		background: none;
-		border: none;
-		padding: 0;
-		cursor: pointer;
-		color: inherit;
-		font: inherit;
-	}
-
-	.block-schedule-arrow {
-		font-size: 10px;
-		transition: transform 0.2s ease;
-	}
-
-	.block-schedule-arrow.open {
-		transform: rotate(90deg);
-	}
-
-	.block-schedule-title {
-		margin: 0;
-		font-size: 16px;
-		font-weight: 700;
-		color: #111827;
-	}
-
-	.block-schedule-error,
-	.block-schedule-empty {
-		font-size: 12px;
-		color: #b45309;
-		background: #fef3c7;
-		border-radius: 8px;
-		padding: 8px;
-	}
-
-	.block-schedule-list {
-		display: flex;
-		flex-direction: column;
-		gap: 10px;
-	}
-
-	.block-schedule-item {
-		padding: 10px;
-		border-radius: 10px;
-		border: 1px solid #e5e7eb;
-		border-left: 4px solid transparent;
-		background: #f9fafb;
-	}
-
-	.block-schedule-item.active {
-		background: transparent;
-		box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.15);
-	}
-
-	.block-schedule-layover-row {
-		margin: -4px 0 6px 0;
-		font-size: 11px;
-		font-weight: 600;
-		color: #6b7280;
-		padding-left: 6px;
-	}
-
-	.block-schedule-time {
-		font-size: 13px;
-		font-weight: 700;
-		color: #111827;
-	}
-
-	.block-schedule-headsign {
-		font-size: 12px;
-		color: #374151;
-		margin-top: 2px;
-	}
-
-	.block-schedule-stops {
-		font-size: 11px;
-		color: #6b7280;
-		margin-top: 2px;
 	}
 </style>
