@@ -901,6 +901,20 @@
 		}, 200); // Match animation duration
 	}
 
+	async function fetchShapeForVehicle(vehicle: TransitVehicle): Promise<number[][]> {
+		if (!vehicle.shape_id) return [];
+		try {
+			const response = await fetch(
+				`${apiBaseUrl}/routeshapes?shape_id=${encodeURIComponent(vehicle.shape_id)}`
+			);
+			if (!response.ok) return [];
+			const data = await response.json();
+			return (data || []).map((c: number[]) => [c[0], c[1]]);
+		} catch {
+			return [];
+		}
+	}
+
 	async function showTripRoute(vehicle: TransitVehicle) {
 		if (!map || !L || isLoadingTrip) return;
 
@@ -908,20 +922,27 @@
 
 		clearTripLayers();
 
+		// Fetch the shape from the pre-computed individual shape file
+		const shapeCoords = await fetchShapeForVehicle(vehicle);
+
+		// Fetch trip data for schedule (shape is now loaded separately)
 		const tripData = await fetchTripData(vehicle.agency, vehicle.trip_id);
 		isLoadingTrip = false;
 
 		tripSchedule = tripData?.schedule || null;
 
-		if (!tripData) return;
-
 		// Get the route color for coloring the line and stop markers
 		const agency = agencies.get(vehicle.agency);
 		const routeColor = getVehicleColorForAgency(vehicle.route_short_name, agency?.name);
 
-		if (tripData.shape && tripData.shape.length > 0) {
-			const routeCoords = tripData.shape.map((point: number[]) => [point[0], point[1]]);
-			const routeLine = L.polyline(routeCoords, {
+		// Use separately fetched shape if available, otherwise fall back to shape embedded in tripdetail
+		const coords =
+			shapeCoords.length > 0
+				? shapeCoords
+				: (tripData?.shape || []).map((point: number[]) => [point[0], point[1]]);
+
+		if (coords.length > 0) {
+			const routeLine = L.polyline(coords, {
 				color: routeColor,
 				weight: 5,
 				opacity: 0.7
@@ -929,7 +950,7 @@
 			currentTripLayers.push(routeLine);
 		}
 
-		if (tripData.schedule && tripData.schedule.length > 0) {
+		if (tripData?.schedule && tripData.schedule.length > 0) {
 			// Sort stops by sequence to determine passed vs upcoming
 			const sortedSchedule = [...tripData.schedule].sort(
 				(a: any, b: any) => a.stop_sequence - b.stop_sequence
