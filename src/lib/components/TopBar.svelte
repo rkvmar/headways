@@ -137,6 +137,7 @@
 		font-size: 30px;
 		font-weight: 600;
 		color: white;
+		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 	}
 	.logo-img {
 		width: 40px;

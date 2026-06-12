@@ -1283,10 +1283,12 @@
 			});
 
 			await fetchAgencies();
-			agenciesInterval = setInterval(fetchAgencies, 3000);
+			// Refresh static GTFS data hourly — agencies, routes, stops barely change
+			agenciesInterval = setInterval(fetchAgencies, 3600000);
 
 			await updateTransitData();
-			updateInterval = setInterval(updateTransitData, 3000);
+			// Refresh vehicle positions frequently (they move in real-time)
+			updateInterval = setInterval(updateTransitData, 10000);
 
 			if (navigator.geolocation) {
 				navigator.geolocation.getCurrentPosition(
