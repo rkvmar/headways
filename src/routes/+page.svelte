@@ -222,8 +222,19 @@
 				);
 			}
 
-			const vehiclePositionsData = await vehiclePositionsResponse.json();
-			const tripsData = await tripsResponse.json();
+			let vehiclePositionsData, tripsData;
+			try {
+				vehiclePositionsData = await vehiclePositionsResponse.json();
+			} catch {
+				console.error('Failed to parse vehicle positions JSON');
+				return [];
+			}
+			try {
+				tripsData = await tripsResponse.json();
+			} catch {
+				console.error('Failed to parse trips JSON');
+				return [];
+			}
 
 			const tripMap = new Map<string, any>();
 			for (const trip of tripsData) {
