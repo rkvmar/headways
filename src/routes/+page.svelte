@@ -743,32 +743,42 @@
 
 		clearTripLayers();
 
-		// Fetch the shape from the pre-computed individual shape file
-		const shapeCoords = await fetchShapeForVehicle(vehicle);
-
-		// Fetch trip data for schedule (shape is now loaded separately)
-		const tripData = await fetchTripData(vehicle.agency, vehicle.trip_id);
-		isLoadingTrip = false;
-
-		tripSchedule = tripData?.schedule || null;
-
 		// Get the route color for coloring the line and stop markers
 		const agency = agencies.get(vehicle.agency);
 		const routeColor = getVehicleColorForAgency(vehicle.route_short_name, agency?.name);
 
-		// Use separately fetched shape if available, otherwise fall back to shape embedded in tripdetail
-		const coords =
-			shapeCoords.length > 0
-				? shapeCoords
-				: (tripData?.shape || []).map((point: number[]) => [point[0], point[1]]);
+		// Start both fetches in parallel
+		const shapePromise = fetchShapeForVehicle(vehicle);
+		const tripPromise = fetchTripData(vehicle.agency, vehicle.trip_id);
 
-		if (coords.length > 0) {
-			const routeLine = L.polyline(coords, {
+		// Draw shape as soon as it arrives (don't wait for tripdetail)
+		const shapeCoords = await shapePromise;
+		if (shapeCoords.length > 0) {
+			const routeLine = L.polyline(shapeCoords, {
 				color: routeColor,
 				weight: 5,
 				opacity: 0.7
 			}).addTo(map);
 			currentTripLayers.push(routeLine);
+		}
+
+		// Wait for trip data for schedule (and fallback shape)
+		const tripData = await tripPromise;
+		isLoadingTrip = false;
+
+		tripSchedule = tripData?.schedule || null;
+
+		// If shape didn't come from individual file, fall back to tripdata's embedded shape
+		if (shapeCoords.length === 0 && tripData?.shape && tripData.shape.length > 0) {
+			const fallbackCoords = tripData.shape.map((point: number[]) => [point[0], point[1]]);
+			if (fallbackCoords.length > 0) {
+				const routeLine = L.polyline(fallbackCoords, {
+					color: routeColor,
+					weight: 5,
+					opacity: 0.7
+				}).addTo(map);
+				currentTripLayers.push(routeLine);
+			}
 		}
 
 		if (tripData?.schedule && tripData.schedule.length > 0) {
