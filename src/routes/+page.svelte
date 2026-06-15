@@ -729,15 +729,19 @@
 	}
 
 	async function fetchTripData(agency: number, tripId: string) {
+		const url = `${apiBaseUrl}/tripdetail?trip_id=${encodeURIComponent(tripId)}`;
+		console.log(`Loading trip detail: trip_id=${tripId}, agency=${agency}, url=${url}`);
 		try {
-			const response = await fetch(
-				`${apiBaseUrl}/tripdetail?trip_id=${encodeURIComponent(tripId)}`
-			);
+			const abortController = new AbortController();
+			const response = await fetchWithTimeout(url, abortController.signal, 120000);
 			if (!response.ok) {
 				throw new Error(`HTTP error! tripdetail: ${response.status}`);
 			}
 			const data = await response.json();
-			if (!data || !data.trip_id) return null;
+			if (!data || !data.trip_id) {
+				console.warn(`Trip detail returned no data for trip_id=${tripId}`);
+				return null;
+			}
 
 			const schedule = (data.schedule || []).map((st: any) => ({
 				stop_id: st.stop_id,
@@ -752,6 +756,10 @@
 
 			const shape = (data.shape || []).map((c: [number, number]) => [c[0], c[1]]);
 
+			console.log(
+				`Trip detail loaded: trip_id=${tripId}, ${schedule.length} stops, ${shape.length} shape points`
+			);
+
 			return {
 				trip_id: data.trip_id,
 				route_id: data.route_id,
@@ -765,7 +773,17 @@
 				schedule: schedule
 			};
 		} catch (error) {
-			console.error('Error fetching trip data:', error);
+			const isAbort = error instanceof DOMException && error.name === 'AbortError';
+			const isNetwork = error instanceof TypeError;
+			if (isAbort) {
+				console.error(`Trip detail timeout for trip_id=${tripId}: request exceeded 30s`);
+			} else if (isNetwork) {
+				console.error(
+					`Trip detail network error for trip_id=${tripId}: server unreachable or connection dropped`
+				);
+			} else {
+				console.error(`Trip detail error for trip_id=${tripId}:`, error);
+			}
 			return null;
 		}
 	}
@@ -801,8 +819,10 @@
 		if (!vehicle.shape_id) return [];
 		console.log(`Loading shape for shape_id=${vehicle.shape_id}, vehicle=${vehicle.vehicle_id}`);
 		try {
-			const response = await fetch(
-				`${apiBaseUrl}/routeshapes?shape_id=${encodeURIComponent(vehicle.shape_id)}`
+			const abortController = new AbortController();
+			const response = await fetchWithTimeout(
+				`${apiBaseUrl}/routeshapes?shape_id=${encodeURIComponent(vehicle.shape_id)}`,
+				abortController.signal
 			);
 			if (!response.ok) {
 				console.warn(
@@ -824,89 +844,93 @@
 		if (!map || !L || isLoadingTrip) return;
 
 		isLoadingTrip = true;
-
 		clearTripLayers();
 
-		// Get the route color for coloring the line and stop markers
-		const agency = agencies.get(vehicle.agency);
-		const routeColor = getVehicleColorForAgency(vehicle.route_short_name, agency?.name);
+		try {
+			// Get the route color for coloring the line and stop markers
+			const agency = agencies.get(vehicle.agency);
+			const routeColor = getVehicleColorForAgency(vehicle.route_short_name, agency?.name);
 
-		// Start both fetches in parallel
-		const shapePromise = fetchShapeForVehicle(vehicle);
-		const tripPromise = fetchTripData(vehicle.agency, vehicle.trip_id);
+			// Start both fetches in parallel
+			const shapePromise = fetchShapeForVehicle(vehicle);
+			const tripPromise = fetchTripData(vehicle.agency, vehicle.trip_id);
 
-		// Draw shape as soon as it arrives (don't wait for tripdetail)
-		const shapeCoords = await shapePromise;
-		if (shapeCoords.length > 0) {
-			const routeLine = L.polyline(shapeCoords, {
-				color: routeColor,
-				weight: 5,
-				opacity: 0.7
-			}).addTo(map);
-			currentTripLayers.push(routeLine);
-		}
-
-		// Wait for trip data for schedule (and fallback shape)
-		const tripData = await tripPromise;
-		isLoadingTrip = false;
-
-		tripSchedule = tripData?.schedule || null;
-
-		// If shape didn't come from individual file, fall back to tripdata's embedded shape
-		if (shapeCoords.length === 0 && tripData?.shape && tripData.shape.length > 0) {
-			const fallbackCoords = tripData.shape.map((point: number[]) => [point[0], point[1]]);
-			if (fallbackCoords.length > 0) {
-				const routeLine = L.polyline(fallbackCoords, {
+			// Draw shape as soon as it arrives (don't wait for tripdetail)
+			const shapeCoords = await shapePromise;
+			if (shapeCoords.length > 0) {
+				const routeLine = L.polyline(shapeCoords, {
 					color: routeColor,
 					weight: 5,
 					opacity: 0.7
 				}).addTo(map);
 				currentTripLayers.push(routeLine);
 			}
-		}
 
-		if (tripData?.schedule && tripData.schedule.length > 0) {
-			// Sort stops by sequence to determine passed vs upcoming
-			const sortedSchedule = [...tripData.schedule].sort(
-				(a: any, b: any) => a.stop_sequence - b.stop_sequence
-			);
-			const nextSeq = vehicle.next_stop_seq;
+			// Wait for trip data for schedule (and fallback shape)
+			const tripData = await tripPromise;
 
-			sortedSchedule.forEach((stop: any, index: number) => {
-				if (stop.stop_lat && stop.stop_lon) {
-					const isFirstStop = index === 0;
-					const isLastStop = index === sortedSchedule.length - 1;
-					const isPassed = nextSeq > 0 && stop.stop_sequence < nextSeq;
-					const markerSize = isFirstStop || isLastStop ? 22 : 18;
-					const stopColor = isPassed ? '#9ca3af' : routeColor;
-					const borderColor = isPassed ? '#9ca3af' : routeColor;
+			tripSchedule = tripData?.schedule || null;
 
-					const flagSvg = `<svg width="${markerSize - 8}" height="${markerSize - 8}" viewBox="0 0 24 24" fill="${encodeURIComponent(stopColor)}" xmlns="http://www.w3.org/2000/svg"><path d="M14.4 6L14 4H5v17h2v-7h5.6l.4 2h7V6h-5.6z"/></svg>`;
-
-					const stopIcon = L.divIcon({
-						className: 'stop-marker',
-						html: `<div style="width:${markerSize}px;height:${markerSize}px;background:${isPassed ? '#f3f4f6' : 'white'};border:2px solid ${borderColor};display:flex;align-items:center;justify-content:center;border-radius:3px;box-shadow:0 1px 3px rgba(0,0,0,0.3);">${flagSvg}</div>`,
-						iconSize: [markerSize, markerSize],
-						iconAnchor: [markerSize / 2, markerSize / 2]
-					});
-
-					const stopMarker = L.marker([stop.stop_lat, stop.stop_lon], {
-						icon: stopIcon,
-						zIndexOffset: 1000
+			// If shape didn't come from individual file, fall back to tripdata's embedded shape
+			if (shapeCoords.length === 0 && tripData?.shape && tripData.shape.length > 0) {
+				const fallbackCoords = tripData.shape.map((point: number[]) => [point[0], point[1]]);
+				if (fallbackCoords.length > 0) {
+					const routeLine = L.polyline(fallbackCoords, {
+						color: routeColor,
+						weight: 5,
+						opacity: 0.7
 					}).addTo(map);
-
-					stopMarker.bindPopup(`
-						<div style="font-family: sans-serif; font-size: 12px;">
-							<strong>${stop.stop_name}</strong><br>
-							${stop.arrival_time ? formatTime(stop.arrival_time) : ''}
-							${stop.departure_time && stop.departure_time !== stop.arrival_time ? `<br>Departure: ${formatTime(stop.departure_time)}` : ''}
-							${stop.timepoint ? '<br><em>Timepoint</em>' : ''}
-						</div>
-					`);
-
-					currentTripLayers.push(stopMarker);
+					currentTripLayers.push(routeLine);
 				}
-			});
+			}
+
+			if (tripData?.schedule && tripData.schedule.length > 0) {
+				// Sort stops by sequence to determine passed vs upcoming
+				const sortedSchedule = [...tripData.schedule].sort(
+					(a: any, b: any) => a.stop_sequence - b.stop_sequence
+				);
+				const nextSeq = vehicle.next_stop_seq;
+
+				sortedSchedule.forEach((stop: any, index: number) => {
+					if (stop.stop_lat && stop.stop_lon) {
+						const isFirstStop = index === 0;
+						const isLastStop = index === sortedSchedule.length - 1;
+						const isPassed = nextSeq > 0 && stop.stop_sequence < nextSeq;
+						const markerSize = isFirstStop || isLastStop ? 22 : 18;
+						const stopColor = isPassed ? '#9ca3af' : routeColor;
+						const borderColor = isPassed ? '#9ca3af' : routeColor;
+
+						const flagSvg = `<svg width="${markerSize - 8}" height="${markerSize - 8}" viewBox="0 0 24 24" fill="${encodeURIComponent(stopColor)}" xmlns="http://www.w3.org/2000/svg"><path d="M14.4 6L14 4H5v17h2v-7h5.6l.4 2h7V6h-5.6z"/></svg>`;
+
+						const stopIcon = L.divIcon({
+							className: 'stop-marker',
+							html: `<div style="width:${markerSize}px;height:${markerSize}px;background:${isPassed ? '#f3f4f6' : 'white'};border:2px solid ${borderColor};display:flex;align-items:center;justify-content:center;border-radius:3px;box-shadow:0 1px 3px rgba(0,0,0,0.3);">${flagSvg}</div>`,
+							iconSize: [markerSize, markerSize],
+							iconAnchor: [markerSize / 2, markerSize / 2]
+						});
+
+						const stopMarker = L.marker([stop.stop_lat, stop.stop_lon], {
+							icon: stopIcon,
+							zIndexOffset: 1000
+						}).addTo(map);
+
+						stopMarker.bindPopup(`
+							<div style="font-family: sans-serif; font-size: 12px;">
+								<strong>${stop.stop_name}</strong><br>
+								${stop.arrival_time ? formatTime(stop.arrival_time) : ''}
+								${stop.departure_time && stop.departure_time !== stop.arrival_time ? `<br>Departure: ${formatTime(stop.departure_time)}` : ''}
+								${stop.timepoint ? '<br><em>Timepoint</em>' : ''}
+							</div>
+						`);
+
+						currentTripLayers.push(stopMarker);
+					}
+				});
+			}
+		} catch (error) {
+			console.error('Error showing trip route:', error);
+		} finally {
+			isLoadingTrip = false;
 		}
 	}
 
