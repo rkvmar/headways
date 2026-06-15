@@ -129,83 +129,147 @@
 		timestamp: number;
 	}
 
-	async function fetchAgencies(): Promise<void> {
+	async function fetchWithTimeout(
+		url: string,
+		signal: AbortSignal,
+		timeoutMs = 30000
+	): Promise<Response> {
+		const controller = new AbortController();
+		const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 		try {
-			const [agenciesResponse, routesResponse, stopsResponse] = await Promise.all([
-				fetch(`${apiBaseUrl}/datafeeds/agency`),
-				fetch(`${apiBaseUrl}/datafeeds/routes`),
-				fetch(`${apiBaseUrl}/datafeeds/stops`)
-			]);
+			// Combine the timeout signal with any external signal
+			const combinedSignal = signal.aborted
+				? signal
+				: combineAbortSignals(signal, controller.signal);
+			return await fetch(url, { signal: combinedSignal });
+		} finally {
+			clearTimeout(timeoutId);
+		}
+	}
 
-			if (!agenciesResponse.ok || !routesResponse.ok) {
-				throw new Error(
-					`HTTP error! agencies: ${agenciesResponse.status}, routes: ${routesResponse.status}`
+	function combineAbortSignals(...signals: AbortSignal[]): AbortSignal {
+		const controller = new AbortController();
+		for (const s of signals) {
+			if (s.aborted) {
+				controller.abort(s.reason);
+				return controller.signal;
+			}
+			s.addEventListener('abort', () => controller.abort(s.reason), { once: true });
+		}
+		return controller.signal;
+	}
+
+	async function fetchAgencies(): Promise<void> {
+		const maxRetries = 3;
+		const baseDelayMs = 1000;
+
+		for (let attempt = 1; attempt <= maxRetries; attempt++) {
+			try {
+				const abortController = new AbortController();
+				const [agenciesResponse, routesResponse, stopsResponse] = await Promise.all([
+					fetchWithTimeout(`${apiBaseUrl}/datafeeds/agency`, abortController.signal),
+					fetchWithTimeout(`${apiBaseUrl}/datafeeds/routes`, abortController.signal),
+					fetchWithTimeout(`${apiBaseUrl}/datafeeds/stops`, abortController.signal)
+				]);
+
+				if (!agenciesResponse.ok || !routesResponse.ok) {
+					throw new Error(
+						`HTTP error! agencies: ${agenciesResponse.status}, routes: ${routesResponse.status}`
+					);
+				}
+
+				const agenciesData = await agenciesResponse.json();
+				const routesData = await routesResponse.json();
+				const stopsData = stopsResponse.ok ? await stopsResponse.json() : [];
+
+				stopsById.clear();
+				for (const stop of stopsData) {
+					if (stop.stop_id && stop.stop_name) {
+						stopsById.set(stop.stop_id, stop.stop_name);
+					}
+				}
+
+				agencies.clear();
+				routes.clear();
+
+				const agencyIdMap = new Map<string, number>();
+				let nextNumericId = 1;
+
+				for (const agency of agenciesData) {
+					const agencyCode = agency.agency_id;
+					const numericId = nextNumericId++;
+					agencyIdMap.set(agencyCode, numericId);
+
+					agencies.set(numericId, {
+						id: numericId,
+						code: agencyCode,
+						name: agency.agency_name,
+						short_name: agency.agency_id,
+						color: '',
+						text_color: '',
+						url: agency.agency_url,
+						timezone: agency.agency_timezone,
+						lang: agency.agency_lang,
+						phone: agency.agency_phone,
+						fare_url: agency.agency_fare_url,
+						email: agency.agency_email
+					});
+
+					if (L && map && !agencyLayers.has(numericId)) {
+						const layerGroup = L.layerGroup().addTo(map);
+						agencyLayers.set(numericId, layerGroup);
+					}
+				}
+
+				for (const route of routesData) {
+					const agencyCode = route.agency_id;
+					const numericId = agencyIdMap.get(agencyCode);
+					if (!numericId) continue;
+
+					const routeKey = route.route_id;
+					routes.set(routeKey, {
+						route_id: route.route_id,
+						route_short_name: route.route_short_name,
+						route_long_name: route.route_long_name,
+						agency_code: agencyCode,
+						route_color: route.route_color,
+						route_text_color: route.route_text_color,
+						route_type: route.route_type,
+						...route,
+						agency_id: numericId
+					});
+				}
+
+				// Success — exit retry loop
+				return;
+			} catch (error) {
+				const isAbortError = error instanceof DOMException && error.name === 'AbortError';
+
+				// On the last attempt, log the full error
+				if (attempt === maxRetries) {
+					const context = isAbortError
+						? 'Request aborted — possible timeout or network interruption'
+						: '';
+					console.error(
+						`Error fetching agencies data (attempt ${attempt}/${maxRetries}):`,
+						error,
+						context
+					);
+					return;
+				}
+
+				// Only retry on AbortError; for other errors (HTTP, parse) give up immediately
+				if (!isAbortError) {
+					console.error(`Error fetching agencies data (attempt ${attempt}/${maxRetries}):`, error);
+					return;
+				}
+
+				const delayMs = baseDelayMs * Math.pow(2, attempt - 1);
+				console.warn(
+					`Agencies fetch aborted (attempt ${attempt}/${maxRetries}), retrying in ${delayMs}ms...`
 				);
+				await new Promise((resolve) => setTimeout(resolve, delayMs));
 			}
-
-			const agenciesData = await agenciesResponse.json();
-			const routesData = await routesResponse.json();
-			const stopsData = stopsResponse.ok ? await stopsResponse.json() : [];
-
-			stopsById.clear();
-			for (const stop of stopsData) {
-				if (stop.stop_id && stop.stop_name) {
-					stopsById.set(stop.stop_id, stop.stop_name);
-				}
-			}
-
-			agencies.clear();
-			routes.clear();
-
-			const agencyIdMap = new Map<string, number>();
-			let nextNumericId = 1;
-
-			for (const agency of agenciesData) {
-				const agencyCode = agency.agency_id;
-				const numericId = nextNumericId++;
-				agencyIdMap.set(agencyCode, numericId);
-
-				agencies.set(numericId, {
-					id: numericId,
-					code: agencyCode,
-					name: agency.agency_name,
-					short_name: agency.agency_id,
-					color: '',
-					text_color: '',
-					url: agency.agency_url,
-					timezone: agency.agency_timezone,
-					lang: agency.agency_lang,
-					phone: agency.agency_phone,
-					fare_url: agency.agency_fare_url,
-					email: agency.agency_email
-				});
-
-				if (L && map && !agencyLayers.has(numericId)) {
-					const layerGroup = L.layerGroup().addTo(map);
-					agencyLayers.set(numericId, layerGroup);
-				}
-			}
-
-			for (const route of routesData) {
-				const agencyCode = route.agency_id;
-				const numericId = agencyIdMap.get(agencyCode);
-				if (!numericId) continue;
-
-				const routeKey = route.route_id;
-				routes.set(routeKey, {
-					route_id: route.route_id,
-					route_short_name: route.route_short_name,
-					route_long_name: route.route_long_name,
-					agency_code: agencyCode,
-					route_color: route.route_color,
-					route_text_color: route.route_text_color,
-					route_type: route.route_type,
-					...route,
-					agency_id: numericId
-				});
-			}
-		} catch (error) {
-			console.error('Error fetching agencies data:', error);
 		}
 	}
 
