@@ -799,14 +799,23 @@
 
 	async function fetchShapeForVehicle(vehicle: TransitVehicle): Promise<number[][]> {
 		if (!vehicle.shape_id) return [];
+		console.log(`Loading shape for shape_id=${vehicle.shape_id}, vehicle=${vehicle.vehicle_id}`);
 		try {
 			const response = await fetch(
 				`${apiBaseUrl}/routeshapes?shape_id=${encodeURIComponent(vehicle.shape_id)}`
 			);
-			if (!response.ok) return [];
+			if (!response.ok) {
+				console.warn(
+					`Shape fetch failed with status ${response.status} for shape_id=${vehicle.shape_id}`
+				);
+				return [];
+			}
 			const data = await response.json();
-			return (data || []).map((c: number[]) => [c[0], c[1]]);
-		} catch {
+			const coords = (data || []).map((c: number[]) => [c[0], c[1]]);
+			console.log(`Shape loaded: shape_id=${vehicle.shape_id}, ${coords.length} points`);
+			return coords;
+		} catch (error) {
+			console.error(`Shape fetch error for shape_id=${vehicle.shape_id}:`, error);
 			return [];
 		}
 	}
