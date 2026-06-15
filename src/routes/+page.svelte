@@ -22,6 +22,7 @@
 	let userLocationMarker: any;
 	let currentTripLayers: any[] = []; // Store route shape and stop layers
 	let isLoadingTrip = false;
+	let currentTripAbortController: AbortController | null = null;
 	let agencyLayers: Map<number, any> = new Map(); // Map agency_id to layer group
 	let searchQuery = $state('');
 	let allVehicles: TransitVehicle[] = $state([]);
@@ -728,12 +729,15 @@
 		return agencyLogoMap[agencyKey] || null;
 	}
 
-	async function fetchTripData(agency: number, tripId: string) {
+	async function fetchTripData(agency: number, tripId: string, signal?: AbortSignal) {
 		const url = `${apiBaseUrl}/tripdetail?trip_id=${encodeURIComponent(tripId)}`;
 		console.log(`Loading trip detail: trip_id=${tripId}, agency=${agency}, url=${url}`);
 		try {
 			const abortController = new AbortController();
-			const response = await fetchWithTimeout(url, abortController.signal, 120000);
+			const combinedSignal = signal
+				? combineAbortSignals(signal, abortController.signal)
+				: abortController.signal;
+			const response = await fetchWithTimeout(url, combinedSignal, 120000);
 			if (!response.ok) {
 				throw new Error(`HTTP error! tripdetail: ${response.status}`);
 			}
@@ -776,7 +780,10 @@
 			const isAbort = error instanceof DOMException && error.name === 'AbortError';
 			const isNetwork = error instanceof TypeError;
 			if (isAbort) {
-				console.error(`Trip detail timeout for trip_id=${tripId}: request exceeded 30s`);
+				// Silent abort if cancelled by switching vehicles
+				if (!signal?.aborted) {
+					console.error(`Trip detail timeout for trip_id=${tripId}: request exceeded 120s`);
+				}
 			} else if (isNetwork) {
 				console.error(
 					`Trip detail network error for trip_id=${tripId}: server unreachable or connection dropped`
@@ -798,6 +805,12 @@
 	}
 
 	function selectVehicle(vehicle: TransitVehicle) {
+		// Cancel any in-flight trip data loading
+		if (currentTripAbortController) {
+			currentTripAbortController.abort();
+			currentTripAbortController = null;
+		}
+		isLoadingTrip = false;
 		selectedVehicle = vehicle;
 		isClosing = false;
 		resetBlockScheduleState();
@@ -815,14 +828,20 @@
 		}, 200); // Match animation duration
 	}
 
-	async function fetchShapeForVehicle(vehicle: TransitVehicle): Promise<number[][]> {
+	async function fetchShapeForVehicle(
+		vehicle: TransitVehicle,
+		signal?: AbortSignal
+	): Promise<number[][]> {
 		if (!vehicle.shape_id) return [];
 		console.log(`Loading shape for shape_id=${vehicle.shape_id}, vehicle=${vehicle.vehicle_id}`);
 		try {
 			const abortController = new AbortController();
+			const combinedSignal = signal
+				? combineAbortSignals(signal, abortController.signal)
+				: abortController.signal;
 			const response = await fetchWithTimeout(
 				`${apiBaseUrl}/routeshapes?shape_id=${encodeURIComponent(vehicle.shape_id)}`,
-				abortController.signal
+				combinedSignal
 			);
 			if (!response.ok) {
 				console.warn(
@@ -835,13 +854,19 @@
 			console.log(`Shape loaded: shape_id=${vehicle.shape_id}, ${coords.length} points`);
 			return coords;
 		} catch (error) {
-			console.error(`Shape fetch error for shape_id=${vehicle.shape_id}:`, error);
+			if (!(error instanceof DOMException && error.name === 'AbortError')) {
+				console.error(`Shape fetch error for shape_id=${vehicle.shape_id}:`, error);
+			}
 			return [];
 		}
 	}
 
 	async function showTripRoute(vehicle: TransitVehicle) {
-		if (!map || !L || isLoadingTrip) return;
+		if (!map || !L) return;
+
+		// Create a new abort controller for this trip load
+		currentTripAbortController = new AbortController();
+		const signal = currentTripAbortController.signal;
 
 		isLoadingTrip = true;
 		clearTripLayers();
@@ -851,9 +876,9 @@
 			const agency = agencies.get(vehicle.agency);
 			const routeColor = getVehicleColorForAgency(vehicle.route_short_name, agency?.name);
 
-			// Start both fetches in parallel
-			const shapePromise = fetchShapeForVehicle(vehicle);
-			const tripPromise = fetchTripData(vehicle.agency, vehicle.trip_id);
+			// Start both fetches in parallel, passing the cancellation signal
+			const shapePromise = fetchShapeForVehicle(vehicle, signal);
+			const tripPromise = fetchTripData(vehicle.agency, vehicle.trip_id, signal);
 
 			// Draw shape as soon as it arrives (don't wait for tripdetail)
 			const shapeCoords = await shapePromise;
@@ -928,9 +953,14 @@
 				});
 			}
 		} catch (error) {
+			// Ignore abort errors from switching vehicles
+			if (error instanceof DOMException && error.name === 'AbortError') return;
 			console.error('Error showing trip route:', error);
 		} finally {
 			isLoadingTrip = false;
+			if (currentTripAbortController?.signal.aborted) {
+				currentTripAbortController = null;
+			}
 		}
 	}
 
