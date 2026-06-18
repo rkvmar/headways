@@ -302,8 +302,18 @@
 			}
 
 			const tripMap = new Map<string, any>();
+			const routeTripsMap = new Map<string, string[]>();
 			for (const trip of tripsData) {
 				tripMap.set(trip.trip_id, trip);
+				// Build a route → trip_ids map for resolving inconsistent data
+				if (trip.route_id && trip.trip_id) {
+					const trips = routeTripsMap.get(trip.route_id);
+					if (trips) {
+						trips.push(trip.trip_id);
+					} else {
+						routeTripsMap.set(trip.route_id, [trip.trip_id]);
+					}
+				}
 			}
 
 			const agencyCodeToNumericId = new Map<string, number>();
@@ -328,15 +338,22 @@
 				const position = vehicle.position;
 				if (!position || !position.latitude || !position.longitude) continue;
 
-				const agencyCode = tripInfo.route_id?.split(':')[0] || trip.tripId?.split(':')[0];
+				// Use the realtime feed's routeId as primary — 511.org's trip-to-route
+				// mapping can be inconsistent (e.g. tripId maps to route U in static data
+				// but routeId says 96). The realtime routeId reflects the actual assignment.
+				const effectiveRouteId = trip.routeId || tripInfo.route_id;
+				const agencyCode = effectiveRouteId?.split(':')[0] || trip.tripId?.split(':')[0];
+
+				// If the realtime route differs from the static trip's route, the trip data
+				// is unreliable for shape/schedule. Find a trip on the correct route instead.
+				const effectiveTripId =
+					trip.routeId && trip.routeId !== tripInfo.route_id
+						? routeTripsMap.get(trip.routeId)?.[0] || trip.tripId
+						: trip.tripId;
 				const numericAgencyId = agencyCodeToNumericId.get(agencyCode) || 1;
 
-				const routeInfo = routes.get(tripInfo.route_id || trip.routeId || '');
-				const routeShortName =
-					routeInfo?.route_short_name ||
-					tripInfo.route_id?.split(':')[1] ||
-					trip.routeId?.split(':')[1] ||
-					'';
+				const routeInfo = routes.get(effectiveRouteId);
+				const routeShortName = routeInfo?.route_short_name || effectiveRouteId?.split(':')[1] || '';
 
 				const uniqueId = `${agencyCode}:${vehicle.vehicle?.id || entity.id}`;
 
@@ -346,7 +363,7 @@
 					agency_code: agencyCode,
 					vehicle_id: vehicle.vehicle?.id || entity.id,
 					unique_id: uniqueId,
-					trip_id: trip.tripId,
+					trip_id: effectiveTripId,
 					lat: position.latitude,
 					lon: position.longitude,
 					deviation: vehicle.trip?.delay ?? 0,
@@ -361,7 +378,7 @@
 					car_count: null,
 					bearing: position.bearing || 0,
 					speed: position.speed || 0,
-					route_id: tripInfo.route_id || trip.routeId || '',
+					route_id: effectiveRouteId,
 					trip_headsign: tripInfo.trip_headsign || '',
 					service_id: tripInfo.service_id || '',
 					direction_id:
@@ -369,7 +386,10 @@
 					block_id: tripInfo.block_id || '',
 					block_name: tripInfo.block_id || null,
 					route_short_name: routeShortName,
-					shape_id: tripInfo.shape_id || '',
+					shape_id:
+						effectiveTripId !== trip.tripId
+							? tripMap.get(effectiveTripId)?.shape_id || ''
+							: tripInfo.shape_id || '',
 					trip_start_timestamp: 0,
 					trip_start_seq: 0,
 					trip_end_seq: 0,
