@@ -1,46 +1,87 @@
 <script lang="ts">
+	import { PUBLIC_API_BASE_URL } from '$env/static/public';
 	import { titleCaseHeadsign, titleCase } from '$lib/utils/strings';
 	import { getReadableAgencyName } from '$lib/utils/agencyNames';
 
-	export let selectedVehicle: any | null = null;
-	export let agencies: Map<number, any>;
-	export let routes: Map<string, any>;
-	export let isClosing = false;
-	export let getAgencyLogo: (agency: any, vehicle: any) => string | null = () => null;
-	export let getVehicleColorForAgency: (
-		routeShortName: string,
-		agencyName?: string
-	) => string = () => '#e5e7eb';
-	export let pinnedVehicleIds: string[] = [];
-	export let togglePin: (vehicle: any) => void = () => {};
-	export let closeBottomSheet: () => void = () => {};
-	export let formatTime: (time: string) => string = (time) => time;
-	export let hexToRgba: (hex: string, alpha: number) => string = () => '';
-	export let tripSchedule: any[] | null = null;
+	let {
+		selectedVehicle = null,
+		agencies,
+		routes,
+		isClosing = false,
+		getAgencyLogo = () => null,
+		getVehicleColorForAgency = () => '#e5e7eb',
+		pinnedVehicleIds = [] as string[],
+		togglePin = () => {},
+		closeBottomSheet = () => {},
+		formatTime = (time: string) => time,
+		hexToRgba = (hex: string, alpha: number) => '',
+		tripSchedule = null as any[] | null
+	}: {
+		selectedVehicle?: any | null;
+		agencies: Map<number, any>;
+		routes: Map<string, any>;
+		isClosing?: boolean;
+		getAgencyLogo?: (agency: any, vehicle: any) => string | null;
+		getVehicleColorForAgency?: (routeShortName: string, agencyName?: string) => string;
+		pinnedVehicleIds?: string[];
+		togglePin?: (vehicle: any) => void;
+		closeBottomSheet?: () => void;
+		formatTime?: (time: string) => string;
+		hexToRgba?: (hex: string, alpha: number) => string;
+		tripSchedule?: any[] | null;
+	} = $props();
 
-	let isStopsOpen = false;
+	let vehicleImages: any[] = [];
+	let imagesLoading = false;
+
+	async function loadVehicleImages(vehicleId: string) {
+		imagesLoading = true;
+		try {
+			const res = await fetch(
+				`${PUBLIC_API_BASE_URL}/api/images/vehicle/${encodeURIComponent(vehicleId)}`
+			);
+			vehicleImages = res.ok ? await res.json() : [];
+		} catch {
+			vehicleImages = [];
+		} finally {
+			imagesLoading = false;
+		}
+	}
+
+	$effect(() => {
+		const vehicle = selectedVehicle;
+		if (vehicle?.vehicle_id) {
+			loadVehicleImages(vehicle.vehicle_id);
+		} else {
+			vehicleImages = [];
+		}
+	});
+
+	let isStopsOpen = $state(false);
 
 	// Trip origin and destination
-	$: tripOrigin = '';
-	$: tripDestination = selectedVehicle?.trip_headsign || '';
+	let tripOrigin = $derived('');
+	let tripDestination = $derived(selectedVehicle?.trip_headsign || '');
 
 	// Sort stops by sequence and determine next stop index
-	$: sortedStops = tripSchedule
-		? [...tripSchedule].sort((a: any, b: any) => a.stop_sequence - b.stop_sequence)
-		: [];
+	let sortedStops = $derived(
+		tripSchedule
+			? [...tripSchedule].sort((a: any, b: any) => a.stop_sequence - b.stop_sequence)
+			: []
+	);
 
-	$: nextStopIndex = (() => {
+	let nextStopIndex = $derived.by(() => {
 		if (!selectedVehicle?.next_stop_seq || !sortedStops.length) return -1;
 		return sortedStops.findIndex((s: any) => s.stop_sequence === selectedVehicle.next_stop_seq);
-	})();
+	});
 
-	$: nextStopTime = (() => {
+	let nextStopTime = $derived.by(() => {
 		if (nextStopIndex < 0) return '';
 		return sortedStops[nextStopIndex]?.arrival_time || '';
-	})();
+	});
 
 	// Format deviation (delay in seconds) into a human-readable string
-	$: deviationText = (() => {
+	let deviationText = $derived.by(() => {
 		const d = selectedVehicle?.deviation;
 		if (d == null) return '';
 		if (d === 0) return 'On time';
@@ -48,15 +89,15 @@
 		if (absMin === 0) return d > 0 ? 'Late' : 'Early';
 		if (d > 0) return `${absMin}m late`;
 		return `${absMin}m early`;
-	})();
+	});
 
-	$: deviationClass = (() => {
+	let deviationClass = $derived.by(() => {
 		const d = selectedVehicle?.deviation;
 		if (d == null) return '';
 		if (d === 0) return 'on-time';
 		if (d > 0) return 'late';
 		return 'early';
-	})();
+	});
 </script>
 
 {#if selectedVehicle}
@@ -140,6 +181,32 @@
 				<span class="detail-label">Status</span>
 				<span class="detail-value {deviationClass}">{deviationText || 'No data'}</span>
 			</div>
+		</div>
+
+		<div class="section-title">Photos</div>
+		{#if imagesLoading}
+			<div class="photo-placeholder">Loading...</div>
+		{:else if vehicleImages.length > 0}
+			{#each vehicleImages as img (img.id)}
+				<div class="photo-entry">
+					<a href={img.image_url} target="_blank" class="photo-link">
+						<img src={img.image_url} alt={img.description || 'Vehicle photo'} loading="lazy" />
+					</a>
+					{#if img.attribution}
+						<div class="photo-attribution">{img.attribution}</div>
+					{/if}
+				</div>
+			{/each}
+		{:else}
+			<div class="photo-placeholder">No image</div>
+		{/if}
+		<div class="add-photo">
+			<a
+				href="/add-photo?vehicle_id={encodeURIComponent(
+					selectedVehicle.vehicle_id
+				)}&agency={encodeURIComponent(agency?.code || '')}"
+				class="add-photo-link">Add Photo</a
+			>
 		</div>
 
 		<div class="vehicle-info-box">
@@ -528,5 +595,64 @@
 	.detail-value.unknown {
 		color: #9ca3af;
 		font-style: italic;
+	}
+
+	.photo-placeholder {
+		width: 100%;
+		height: 160px;
+		background: #e5e7eb;
+		border-radius: 8px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		color: #9ca3af;
+		font-size: 13px;
+		font-style: italic;
+	}
+
+	.photo-entry {
+		margin-bottom: 8px;
+	}
+
+	.photo-link {
+		display: block;
+	}
+
+	.photo-entry img {
+		width: 100%;
+		height: 160px;
+		object-fit: cover;
+		border-radius: 8px;
+		border: 1px solid #e5e7eb;
+		background: #f3f4f6;
+		transition: opacity 0.15s;
+		display: block;
+	}
+
+	.photo-entry img:hover {
+		opacity: 0.9;
+	}
+
+	.photo-attribution {
+		font-size: 11px;
+		color: #9ca3af;
+		margin-top: 2px;
+		font-style: italic;
+	}
+
+	.add-photo {
+		margin-bottom: 6px;
+	}
+
+	.add-photo-link {
+		color: #2563eb;
+		font-size: 12px;
+		font-weight: 600;
+		cursor: pointer;
+		text-decoration: none;
+	}
+
+	.add-photo-link:hover {
+		text-decoration: underline;
 	}
 </style>

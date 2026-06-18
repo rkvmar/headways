@@ -100,6 +100,7 @@
 		justify-content: center;
 		opacity: 0.7;
 		transition: opacity 0.15s;
+		text-decoration: none;
 	}
 
 	.topbar-button:hover {
