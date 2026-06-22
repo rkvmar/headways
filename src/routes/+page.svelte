@@ -24,6 +24,7 @@
 	let currentTripAbortController: AbortController | null = null;
 	let agencyLayers: Map<number, any> = new Map(); // Map agency_id to layer group
 	let searchQuery = $state('');
+	let loading = $state(true);
 	let allVehicles: TransitVehicle[] = $state([]);
 	let selectedVehicle: TransitVehicle | null = $state(null);
 	let isClosing = $state(false);
@@ -1296,6 +1297,7 @@
 			agenciesInterval = setInterval(fetchAgencies, 3600000);
 
 			await updateTransitData();
+			loading = false;
 			// Refresh vehicle positions frequently (they move in real-time)
 			updateInterval = setInterval(updateTransitData, 10000);
 
@@ -1506,6 +1508,13 @@
 	{/if}
 
 	<div bind:this={mapContainer} class="map"></div>
+
+	{#if loading}
+		<div class="loading-overlay">
+			<div class="spinner"></div>
+			<div class="loading-text">Loading vehicles...</div>
+		</div>
+	{/if}
 
 	{#if pinnedVehicleIds.length > 0}
 		<div class="pinned-panel">
@@ -1883,6 +1892,43 @@
 	.pinned-remove:hover {
 		background: rgba(0, 0, 0, 0.06);
 		color: #374151;
+	}
+
+	.loading-overlay {
+		position: absolute;
+		top: var(--top-bar-height);
+		left: 0;
+		width: 100%;
+		height: calc(100% - var(--top-bar-height));
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		background: rgba(243, 244, 246, 0.85);
+		z-index: 9999;
+		pointer-events: none;
+	}
+
+	.spinner {
+		width: 40px;
+		height: 40px;
+		border: 4px solid #d1d5db;
+		border-top-color: #2563eb;
+		border-radius: 50%;
+		animation: spin 0.8s linear infinite;
+	}
+
+	.loading-text {
+		margin-top: 12px;
+		font-size: 14px;
+		color: #6b7280;
+		font-weight: 500;
+	}
+
+	@keyframes spin {
+		to {
+			transform: rotate(360deg);
+		}
 	}
 
 	:global(.leaflet-container) {
