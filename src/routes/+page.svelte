@@ -26,6 +26,7 @@
 	let searchQuery = $state('');
 	let loading = $state(true);
 	let allVehicles: TransitVehicle[] = $state([]);
+	let lastFetchTime: number | null = $state(null); // epoch ms
 	let selectedVehicle: TransitVehicle | null = $state(null);
 	let isClosing = $state(false);
 	let ledDestinationContainer: HTMLDivElement | null = null;
@@ -289,7 +290,15 @@
 
 			let vehiclePositionsData, tripsData;
 			try {
-				vehiclePositionsData = await vehiclePositionsResponse.json();
+				const parsed = await vehiclePositionsResponse.json();
+				// Support both enveloped format ({ fetchedAt, data }) and raw feed
+				if (parsed.data && parsed.fetchedAt) {
+					lastFetchTime = new Date(parsed.fetchedAt).getTime();
+					vehiclePositionsData = parsed.data;
+				} else {
+					lastFetchTime = Date.now();
+					vehiclePositionsData = parsed;
+				}
 			} catch {
 				console.error('Failed to parse vehicle positions JSON');
 				return [];
@@ -325,7 +334,12 @@
 
 			const vehicles: TransitVehicle[] = [];
 
-			for (const entity of vehiclePositionsData.entity || []) {
+			if (!vehiclePositionsData || !vehiclePositionsData.entity) {
+				console.error('Vehicle positions data has no entity array');
+				return [];
+			}
+
+			for (const entity of vehiclePositionsData.entity) {
 				const vehicle = entity.vehicle;
 				if (!vehicle) continue;
 
@@ -1612,6 +1626,7 @@
 			{formatTime}
 			{hexToRgba}
 			{tripSchedule}
+			{lastFetchTime}
 		/>
 	{/if}
 </div>

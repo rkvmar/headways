@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount, onDestroy } from 'svelte';
 	import { PUBLIC_API_BASE_URL } from '$env/static/public';
 	import { titleCaseHeadsign, titleCase } from '$lib/utils/strings';
 	import { getReadableAgencyName } from '$lib/utils/agencyNames';
@@ -15,7 +16,8 @@
 		closeBottomSheet = () => {},
 		formatTime = (time: string) => time,
 		hexToRgba = (hex: string, alpha: number) => '',
-		tripSchedule = null as any[] | null
+		tripSchedule = null as any[] | null,
+		lastFetchTime = null as number | null
 	}: {
 		selectedVehicle?: any | null;
 		agencies: Map<number, any>;
@@ -29,7 +31,34 @@
 		formatTime?: (time: string) => string;
 		hexToRgba?: (hex: string, alpha: number) => string;
 		tripSchedule?: any[] | null;
+		lastFetchTime?: number | null;
 	} = $props();
+
+	let now = $state(Date.now());
+	let relativeTimeInterval: NodeJS.Timeout;
+
+	onMount(() => {
+		relativeTimeInterval = setInterval(() => {
+			now = Date.now();
+		}, 1000);
+	});
+
+	onDestroy(() => {
+		if (relativeTimeInterval) clearInterval(relativeTimeInterval);
+	});
+
+	let relativeTimeText = $derived.by(() => {
+		if (lastFetchTime == null) return '';
+		const elapsed = Math.floor((now - lastFetchTime) / 1000);
+		if (elapsed < 5) return 'just now';
+		if (elapsed < 60) return `${elapsed}s ago`;
+		const mins = Math.floor(elapsed / 60);
+		if (mins < 60) return mins === 1 ? '1m ago' : `${mins}m ago`;
+		const hrs = Math.floor(mins / 60);
+		if (hrs < 24) return hrs === 1 ? '1h ago' : `${hrs}h ago`;
+		const days = Math.floor(hrs / 24);
+		return days === 1 ? '1d ago' : `${days}d ago`;
+	});
 
 	let vehicleImages: any[] = [];
 	let imagesLoading = false;
@@ -127,6 +156,9 @@
 						<div class="route-long-name">{routeLongName}</div>
 					{/if}
 					<div class="headsign">{headsign}</div>
+					{#if relativeTimeText}
+						<div class="data-age">{relativeTimeText}</div>
+					{/if}
 				</div>
 				<div class="header-buttons">
 					<button
@@ -347,6 +379,13 @@
 		font-weight: 500;
 		color: #6b7280;
 		/*word-wrap: break-word;*/
+	}
+
+	.data-age {
+		font-size: 11px;
+		font-weight: 400;
+		color: #9ca3af;
+		margin-top: 2px;
 	}
 
 	.header-buttons {
