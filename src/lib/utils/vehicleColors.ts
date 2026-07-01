@@ -35,7 +35,11 @@ export function getVehicleColorForAgency(
 		vta: {
 			'Blue Line': '#2CB6E7',
 			'Green Line': '#A1CF67',
-			'Orange Line': '#F89923'
+			'Orange Line': '#F89923',
+			OrangeW: '#F89923',
+			OrangeE: '#F89923',
+			GreenS: '#A1CF67',
+			BlueS: '#2CB6E7'
 		},
 		soltrans: {
 			R: '#D63029',
