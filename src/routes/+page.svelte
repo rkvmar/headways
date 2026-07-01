@@ -736,7 +736,7 @@
 			santarosa: `${basePath}/citybus.svg`,
 			'sonoma-marin area rail transit': `${basePath}/smart.png`,
 			'tri delta transit': `${basePath}/tri-delta-transit.png`,
-			'fairfield and suisun transit': `${basePath}/fast.png`,
+			fast: `${basePath}/fast.png`,
 			'presidio go': `${basePath}/presidigo.png`,
 			'westcat (western contra costa)': `${basePath}/westcat.png`,
 			sonoma: `${basePath}/sct.png`,
@@ -1556,7 +1556,7 @@
 								</div>
 								<div class="pinned-route">
 									{agency?.name?.toLowerCase() === 'caltrain' ||
-									agency?.name?.toLowerCase() === 'sonoma marin area rail transit'
+									agency?.name?.toLowerCase() === 'sonoma-marin area rail transit'
 										? (displayVehicle.trip_short_name || '').replace('Trip ', '') ||
 											displayVehicle.route_short_name
 										: displayVehicle.route_short_name || displayVehicle.vehicle_id}

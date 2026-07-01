@@ -133,7 +133,10 @@
 	{@const agency = agencies.get(selectedVehicle.agency)}
 	{@const routeInfo = routes.get(selectedVehicle.route_id)}
 	{@const agencyName = agency?.name?.toLowerCase() || ''}
-	{@const isTrain = agencyName === 'caltrain' || agencyName === 'sonoma-marin area rail transit'}
+	{@const isTrain =
+		agencyName === 'caltrain' ||
+		agencyName === 'sonoma-marin area rail transit' ||
+		agencyName === 'sonoma marin area rail transit'}
 	{@const routeShortName =
 		isTrain && selectedVehicle.trip_short_name
 			? selectedVehicle.trip_short_name.replace('Trip ', '')

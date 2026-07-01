@@ -123,7 +123,7 @@
 	function isTrain(agency?: Agency): boolean {
 		if (!agency?.name) return false;
 		const name = agency.name.toLowerCase();
-		return ['caltrain', 'sonoma marin area rail transit', 'altamont corridor express'].includes(
+		return ['caltrain', 'sonoma-marin area rail transit', 'altamont corridor express'].includes(
 			name
 		);
 	}
