@@ -79,7 +79,7 @@ export function getVehicleColorForAgency(
 		'vine transit': '#E77342',
 		'sonoma county transit': '#193888',
 		santarosa: '#035B91',
-		'sonoma marin area rail transit': '#104432',
+		'sonoma-marin area rail transit': '#104432',
 		'tri delta transit': '#004B8F',
 		fast: '#064F8F',
 		'emery go-round': '#FFA801',
@@ -92,7 +92,7 @@ export function getVehicleColorForAgency(
 		mvgo: '#7CC144',
 		'capitol corridor joint powers authority': '#00537E',
 		'altamont corridor express': '#78217D',
-		vacaville: '#19A1DB',
+		'vacaville city coach': '#19A1DB',
 		//SoCal
 		'san diego mts': '#DE2B26',
 		'north county transit district': '#088C99',
