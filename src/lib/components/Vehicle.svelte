@@ -110,6 +110,7 @@
 		FBUS: 'F',
 		Hollis: 'H',
 		'Shell/Pow': 'SP',
+		'Shell/Pow Sun': 'SP',
 		'Lot D': 'D',
 		'West Field Garage': 'WFG',
 		'A - AM': 'A',
