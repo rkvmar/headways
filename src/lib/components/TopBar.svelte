@@ -2,7 +2,7 @@
 	export let searchQuery: string;
 	export let settingsOpen = false;
 	export let filtersOpen = false;
-	export let placeholder = 'Search routes, vehicles, agencies...';
+	export let placeholder = 'Search';
 	export let onSearchInput: () => void = () => {};
 	export let onToggleSettings: () => void = () => {};
 	export let onToggleFilters: () => void = () => {};
@@ -147,5 +147,11 @@
 
 	.logo p {
 		margin: 0;
+	}
+
+	@media (max-width: 600px) {
+		.logo p {
+			display: none;
+		}
 	}
 </style>
