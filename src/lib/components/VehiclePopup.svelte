@@ -344,12 +344,13 @@
 		}
 	}
 
-	@media (max-width: 600px) {
+	@media (max-width: 800px) {
 		.popup {
 			top: auto;
 			left: 0;
 			bottom: 0;
-			width: 100%;
+			width: calc(100% - 40px);
+			margin: 0 auto;
 			max-height: 50vh;
 			border-radius: 16px 16px 0 0;
 			animation: slideUp 0.2s ease-out;
