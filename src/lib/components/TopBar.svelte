@@ -149,7 +149,7 @@
 		margin: 0;
 	}
 
-	@media (max-width: 600px) {
+	@media (max-width: 800px) {
 		.logo p {
 			display: none;
 		}
