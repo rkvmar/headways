@@ -377,7 +377,7 @@
 
 	.header {
 		padding-bottom: 12px;
-		border-bottom: 1px solid #e5e7eb;
+		/*border-bottom: 1px solid #e5e7eb;*/
 		margin-bottom: 12px;
 	}
 
