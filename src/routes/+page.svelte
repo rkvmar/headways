@@ -1,8 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { browser } from '$app/environment';
-	import { mount } from 'svelte';
-	import Vehicle from '$lib/components/Vehicle.svelte';
+	import { createVehicleCanvasLayer } from '$lib/components/VehicleCanvasLayer';
 	import TopBar from '$lib/components/TopBar.svelte';
 	import VehiclePopup from '$lib/components/VehiclePopup.svelte';
 	import { PUBLIC_API_BASE_URL } from '$env/static/public';
@@ -13,7 +12,7 @@
 	let mapContainer: HTMLDivElement;
 	let map: any;
 	let L: any;
-	let vehicleMarkers: Map<string, any> = new Map();
+	let vehicleCanvasLayer: any;
 	let updateInterval: NodeJS.Timeout;
 	let agenciesInterval: NodeJS.Timeout;
 	let agencies: Map<number, any> = new Map();
@@ -22,7 +21,6 @@
 	let currentTripLayers: any[] = []; // Store route shape and stop layers
 	let isLoadingTrip = false;
 	let currentTripAbortController: AbortController | null = null;
-	let agencyLayers: Map<number, any> = new Map(); // Map agency_id to layer group
 	let searchQuery = $state('');
 	let loading = $state(true);
 	let allVehicles: TransitVehicle[] = $state([]);
@@ -217,10 +215,6 @@
 						email: agency.agency_email
 					});
 
-					if (L && map && !agencyLayers.has(numericId)) {
-						const layerGroup = L.layerGroup().addTo(map);
-						agencyLayers.set(numericId, layerGroup);
-					}
 				}
 
 				for (const route of routesData) {
@@ -998,32 +992,6 @@
 		}
 	}
 
-	function createVehicleIcon(vehicle: TransitVehicle) {
-		const tempDiv = document.createElement('div');
-		const agency = agencies.get(vehicle.agency);
-
-		const routeKey = vehicle.route_id;
-		const routeInfo = routes.get(routeKey);
-
-		if (!routeInfo && Math.random() < 0.01) {
-			console.log(
-				`Route not found for key: ${routeKey}, available keys:`,
-				Array.from(routes.keys()).slice(0, 10)
-			);
-		}
-		const vehicleComponent = mount(Vehicle, {
-			target: tempDiv,
-			props: { vehicle, agency, routeInfo, colorMode }
-		});
-
-		return L.divIcon({
-			className: 'vehicle-marker',
-			html: tempDiv.innerHTML,
-			iconSize: [24, 24],
-			iconAnchor: [12, 12]
-		});
-	}
-
 	function createUserLocationIcon() {
 		return L.divIcon({
 			className: 'user-location-marker',
@@ -1040,29 +1008,6 @@
 			iconSize: [22, 22],
 			iconAnchor: [11, 11]
 		});
-	}
-
-	function animateMarkerToPosition(marker: any, newLatLng: any, duration = 2000) {
-		const startLatLng = marker.getLatLng();
-		const startTime = performance.now();
-
-		function animate(currentTime: number) {
-			const elapsed = currentTime - startTime;
-			const progress = Math.min(elapsed / duration, 1);
-
-			const easedProgress = 1 - (1 - progress) * (1 - progress);
-
-			const lat = startLatLng.lat + (newLatLng.lat - startLatLng.lat) * easedProgress;
-			const lng = startLatLng.lng + (newLatLng.lng - startLatLng.lng) * easedProgress;
-
-			marker.setLatLng([lat, lng]);
-
-			if (progress < 1) {
-				requestAnimationFrame(animate);
-			}
-		}
-
-		requestAnimationFrame(animate);
 	}
 
 	function matchesFilters(vehicle: TransitVehicle): boolean {
@@ -1170,94 +1115,108 @@
 		return false;
 	}
 
-	function isVehicleInView(vehicle: TransitVehicle, bounds: any): boolean {
-		if (!vehicle.lat || !vehicle.lon) return false;
-		return bounds.contains(L.latLng(vehicle.lat, vehicle.lon));
+	function getTimelinessColor(deviation: number | null): string {
+		if (deviation == null) return '#9ca3af';
+		const absMin = Math.abs(deviation) / 60;
+		if (absMin < 0.5) return '#069b37';
+		if (deviation > 0) {
+			if (absMin < 2) return '#f4a609';
+			if (absMin < 5) return '#d8630f';
+			if (absMin < 10) return '#b50909';
+			return '#dc2626';
+		} else {
+			if (absMin < 2) return '#2e87f4';
+			if (absMin < 5) return '#1264e8';
+			if (absMin < 10) return '#134bc4';
+			return '#1d4ed8';
+		}
+	}
+
+	const routeNameToShortName: Record<string, string> = {
+		'Presidio GO South Hills': 'SH',
+		'Presidio GO Downtown': 'DT',
+		'Blue Line': 'B',
+		'Green Line': 'G',
+		'Orange Line': 'O',
+		OrangeW: 'Ow',
+		OrangeE: 'Oe',
+		GreenS: 'Gs',
+		BlueS: 'Bs',
+		NBUS: 'N',
+		TBUS: 'T',
+		LBUS: 'L',
+		KBUS: 'K',
+		FBUS: 'F',
+		Hollis: 'H',
+		'Shell/Pow': 'SP',
+		'Shell/Pow Sun': 'SP',
+		'Lot D': 'D',
+		'West Field Garage': 'WFG',
+		'A - AM': 'A',
+		'B - AM': 'B',
+		'C - AM': 'C',
+		Copper: 'C'
+	};
+
+	function isTrain(agency?: Agency): boolean {
+		if (!agency?.name) return false;
+		const name = agency.name.toLowerCase();
+		return ['caltrain', 'sonoma-marin area rail transit', 'altamont corridor express'].includes(
+			name
+		);
+	}
+
+	function getDisplayName(v: TransitVehicle, agency?: Agency, routeInfo?: any): string {
+		if (isTrain(agency) && v.trip_short_name) {
+			return v.trip_short_name.replace('Trip ', '');
+		}
+		if (routeNameToShortName[v.route_short_name]) {
+			return routeNameToShortName[v.route_short_name];
+		}
+		if (v.route_short_name?.includes('Rapid')) {
+			return v.route_short_name.replace('Rapid', '').trim();
+		}
+		if (v.route_short_name?.includes('Express')) {
+			return v.route_short_name.replace('Express', '').trim();
+		}
+		if (v.route_short_name?.includes('Line')) {
+			return v.route_short_name.replace('Line', '').trim();
+		}
+		if (v.route_short_name?.includes('Trip')) {
+			return v.route_short_name.replace('Trip', '').trim();
+		}
+		if (v.route_short_name?.includes(' - AM')) {
+			return v.route_short_name.replace(' - AM', '').trim();
+		}
+		if (routeInfo && routeInfo.route_short_name) {
+			return routeInfo.route_short_name;
+		}
+		return v.route_short_name || v.vehicle_id || '?';
 	}
 
 	function updateVehicleMarkers(vehicles: TransitVehicle[]) {
-		if (!map || !L) {
-			return;
-		}
+		if (!vehicleCanvasLayer) return;
 
-		const filteredVehicles = vehicles.filter((v) => matchesSearch(v) && matchesFilters(v));
-		const activeVehicles = new Set<string>();
-		const bounds = map.getBounds();
+		const filtered = vehicles.filter((v) => matchesSearch(v) && matchesFilters(v));
+		const canvasVehicles = filtered
+			.filter((v) => v.lat && v.lon)
+			.map((v) => ({
+				unique_id: v.unique_id,
+				lat: v.lat,
+				lon: v.lon,
+				backgroundColor:
+					colorMode === 'timeliness'
+						? getTimelinessColor(v.deviation)
+						: getVehicleColorForAgency(v.route_short_name, agencies.get(v.agency)?.name),
+				routeNumber: getDisplayName(v, agencies.get(v.agency), routes.get(v.route_id)),
+				routeTooltip:
+					routes.get(v.route_id)?.route_long_name
+						? `${routes.get(v.route_id)?.route_short_name} - ${routes.get(v.route_id)?.route_long_name}`
+						: v.route_short_name,
+				agencyId: v.agency
+			}));
 
-		// Hide all markers first
-		vehicleMarkers.forEach((marker, uniqueId) => {
-			agencyLayers.forEach((layer) => {
-				if (layer.hasLayer(marker)) {
-					layer.removeLayer(marker);
-				}
-			});
-		});
-
-		filteredVehicles.forEach((vehicle) => {
-			if (vehicle.lat && vehicle.lon) {
-				activeVehicles.add(vehicle.unique_id);
-
-				if (!isVehicleInView(vehicle, bounds)) {
-					return;
-				}
-
-				const marker = vehicleMarkers.get(vehicle.unique_id);
-				const newPosition = [vehicle.lat, vehicle.lon];
-
-				if (marker) {
-					const currentPos = marker.getLatLng();
-					const newPos = L.latLng(newPosition[0], newPosition[1]);
-
-					const distance = currentPos.distanceTo(newPos);
-					if (distance > 1) {
-						animateMarkerToPosition(marker, newPos, 2500);
-					} else {
-						marker.setLatLng(newPos);
-					}
-
-					marker.setIcon(createVehicleIcon(vehicle));
-
-					// Update click handler for existing marker
-					marker.off('click');
-					marker.on('click', () => {
-						selectVehicle(vehicle);
-					});
-
-					// Re-add to agency layer
-					const agencyLayer = agencyLayers.get(vehicle.agency);
-					if (agencyLayer && !agencyLayer.hasLayer(marker)) {
-						agencyLayer.addLayer(marker);
-					}
-				} else {
-					const newMarker = L.marker(newPosition, {
-						icon: createVehicleIcon(vehicle)
-					});
-
-					newMarker.on('click', () => {
-						selectVehicle(vehicle);
-					});
-
-					// Add marker to agency-specific layer
-					const agencyLayer = agencyLayers.get(vehicle.agency);
-					if (agencyLayer) {
-						agencyLayer.addLayer(newMarker);
-					}
-
-					vehicleMarkers.set(vehicle.unique_id, newMarker);
-				}
-			}
-		});
-		for (const [uniqueId, marker] of vehicleMarkers.entries()) {
-			if (!activeVehicles.has(uniqueId)) {
-				// Remove from all layers
-				agencyLayers.forEach((layer) => {
-					if (layer.hasLayer(marker)) {
-						layer.removeLayer(marker);
-					}
-				});
-				vehicleMarkers.delete(uniqueId);
-			}
-		}
+		vehicleCanvasLayer.setVehicles(canvasVehicles);
 	}
 
 	async function updateTransitData() {
@@ -1286,6 +1245,13 @@
 				smoothSensitivity: 1
 			}).setView([defaultLat, defaultLng], defaultZoom);
 
+			vehicleCanvasLayer = new (createVehicleCanvasLayer(L))();
+			vehicleCanvasLayer.onClick((id: string) => {
+				const vehicle = allVehicles.find((v) => v.unique_id === id);
+				if (vehicle) selectVehicle(vehicle);
+			});
+			map.addLayer(vehicleCanvasLayer);
+
 			// if (map.smoothWheelZoom) {
 			// 	map.smoothWheelZoom.enable();
 			// }
@@ -1303,7 +1269,7 @@
 			});
 
 			map.on('moveend zoomend', () => {
-				updateVehicleMarkers(allVehicles);
+				// Canvas layer handles its own rendering
 			});
 
 			await fetchAgencies();
@@ -1356,6 +1322,10 @@
 		}
 
 		clearTripLayers();
+
+		if (vehicleCanvasLayer && map) {
+			map.removeLayer(vehicleCanvasLayer);
+		}
 
 		if (map) {
 			map.remove();
