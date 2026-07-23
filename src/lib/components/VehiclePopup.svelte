@@ -88,11 +88,9 @@
 
 	let isStopsOpen = $state(false);
 
-	// Trip origin and destination
 	let tripOrigin = $derived('');
 	let tripDestination = $derived(selectedVehicle?.trip_headsign || '');
 
-	// Sort stops by sequence and determine next stop index
 	let sortedStops = $derived(
 		tripSchedule
 			? [...tripSchedule].sort((a: any, b: any) => a.stop_sequence - b.stop_sequence)
@@ -109,7 +107,6 @@
 		return sortedStops[nextStopIndex]?.arrival_time || '';
 	});
 
-	// Format deviation (delay in seconds) into a human-readable string
 	let deviationText = $derived.by(() => {
 		const d = selectedVehicle?.deviation;
 		if (d == null) return '';
@@ -244,8 +241,8 @@
 			>
 		</div>
 
-		<div class="vehicle-info-box">
-			<div class="section-title">Vehicle Info</div>
+	<div>
+		<div class="section-title">Vehicle Info</div>
 			<div class="detail-row">
 				<span class="detail-label">Vehicle</span>
 				<span class="detail-value">{selectedVehicle.vehicle_id}</span>
@@ -494,14 +491,6 @@
 		background: #e5e7eb;
 	}
 
-	.vehicle-info-box {
-		background: #f9fafb;
-		border: 1px solid #e5e7eb;
-		border-radius: 10px;
-		padding: 12px;
-		margin-bottom: 12px;
-	}
-
 	.section-title {
 		font-size: 14px;
 		font-weight: 700;
@@ -509,6 +498,7 @@
 		/*text-transform: uppercase;*/
 		/*letter-spacing: 0.05em;*/
 		margin-bottom: 8px;
+		margin-top: 15px;
 	}
 
 	.trip-route {

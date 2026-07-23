@@ -1613,7 +1613,7 @@
 
 	.settings-panel {
 		position: absolute;
-		top: 56px;
+		top: 66px;
 		right: 12px;
 		z-index: 1000;
 		width: 260px;
@@ -1684,11 +1684,11 @@
 
 	.filters-panel {
 		position: absolute;
-		top: 56px;
+		top: 66px;
 		right: 12px;
 		z-index: 1000;
 		width: 240px;
-		max-height: calc(100vh - 80px);
+		max-height: calc(100vh - 120px);
 		overflow-y: auto;
 		background: white;
 		border-radius: 12px;

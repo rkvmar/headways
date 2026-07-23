@@ -58,7 +58,7 @@
 		z-index: 1002;
 		display: flex;
 		align-items: center;
-		justify-content: center;
+		gap: 8px;
 		padding: 10px 12px;
 		height: var(--top-bar-height, 56px);
 		background: #e24b4b;
@@ -67,7 +67,8 @@
 	}
 
 	.search-container {
-		width: 50%;
+		flex: 1;
+		min-width: 0;
 	}
 
 	.search-input {
@@ -78,15 +79,15 @@
 		border-radius: 8px;
 		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 		outline: none;
+		box-sizing: border-box;
 		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 	}
 
 	.right-buttons {
-		position: absolute;
-		right: 10px;
 		display: flex;
 		align-items: center;
 		gap: 2px;
+		flex-shrink: 0;
 	}
 
 	.topbar-button {
@@ -128,17 +129,15 @@
 		}
 	}
 	.logo {
-		position: absolute;
-		left: 10px;
 		display: flex;
 		flex-direction: row;
 		align-items: center;
-		justify-content: left;
-		gap: 15px;
+		gap: 8px;
 		font-size: 30px;
 		font-weight: 600;
 		color: white;
 		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+		flex-shrink: 0;
 	}
 	.logo-img {
 		width: 40px;
