@@ -98,8 +98,33 @@
 	);
 
 	let nextStopIndex = $derived.by(() => {
-		if (!selectedVehicle?.next_stop_seq || !sortedStops.length) return -1;
-		return sortedStops.findIndex((s: any) => s.stop_sequence === selectedVehicle.next_stop_seq);
+		if (!sortedStops.length) return -1;
+
+		// Use next_stop_seq if available
+		if (selectedVehicle?.next_stop_seq) {
+			const idx = sortedStops.findIndex(
+				(s: any) => s.stop_sequence === selectedVehicle.next_stop_seq
+			);
+			if (idx >= 0) return idx;
+		}
+
+		// Fallback: find first stop whose arrival time hasn't passed yet
+		const now = selectedVehicle?.timestamp
+			? selectedVehicle.timestamp * 1000
+			: Date.now();
+		const nowMinutes =
+			new Date(now).getHours() * 60 + new Date(now).getMinutes();
+
+		for (let i = 0; i < sortedStops.length; i++) {
+			const time = sortedStops[i].arrival_time;
+			if (!time) continue;
+			const parts = time.split(':');
+			if (parts.length < 2) continue;
+			const stopMinutes = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+			if (stopMinutes >= nowMinutes) return i;
+		}
+
+		return -1;
 	});
 
 	let nextStopTime = $derived.by(() => {
@@ -175,11 +200,13 @@
 			</div>
 		</div>
 
-		{#if selectedVehicle.next_stop_name}
+		{#if sortedStops.length > 0}
 			<button class="next-stop-header" onclick={() => (isStopsOpen = !isStopsOpen)}>
 				<span class="next-stop-label">Next Stop</span>
 				<span class="next-stop-value">
-					<span class="next-stop-name">{selectedVehicle.next_stop_name}</span>
+					<span class="next-stop-name">
+						{selectedVehicle.next_stop_name || sortedStops[nextStopIndex]?.stop_name || ''}
+					</span>
 					{#if nextStopTime}
 						<span class="next-stop-time">{nextStopTime}</span>
 					{/if}
@@ -190,7 +217,7 @@
 
 		{#if isStopsOpen && sortedStops.length > 0}
 			<div class="stops-list">
-				{#each sortedStops as stop, i (stop.stop_id || i)}
+				{#each sortedStops as stop, i (stop.stop_sequence ?? i)}
 					{@const isPassed = nextStopIndex >= 0 && i < nextStopIndex}
 					{@const isNext = nextStopIndex >= 0 && i === nextStopIndex}
 					<div class="stop-item" class:passed={isPassed} class:next={isNext}>
