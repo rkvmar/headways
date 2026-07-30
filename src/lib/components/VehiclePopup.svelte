@@ -100,7 +100,6 @@
 	let nextStopIndex = $derived.by(() => {
 		if (!sortedStops.length) return -1;
 
-		// Use next_stop_seq if available
 		if (selectedVehicle?.next_stop_seq) {
 			const idx = sortedStops.findIndex(
 				(s: any) => s.stop_sequence === selectedVehicle.next_stop_seq
@@ -108,7 +107,6 @@
 			if (idx >= 0) return idx;
 		}
 
-		// Fallback: find first stop whose arrival time hasn't passed yet
 		const now = selectedVehicle?.timestamp
 			? selectedVehicle.timestamp * 1000
 			: Date.now();

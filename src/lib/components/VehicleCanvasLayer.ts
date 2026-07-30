@@ -21,15 +21,6 @@ interface AnimState {
 	start: number;
 }
 
-// ponytail: L.Layer needs leaflet imported at module level which breaks SSR.
-// Accept L as a param, use L.Layer.extend() to get a proper instanceof.
-//
-// Canvas is inside mapPane at z-index 450 (below marker-pane 600, above
-// overlay-pane 400) so Leaflet markers render on top. Each frame we offset
-// the canvas by the negative of the map-pane translate so it visually
-// covers the container at (0,0). Drawing uses latLngToContainerPoint.
-// pointer-events:none on canvas so map drag is unaffected; clicks go through
-// a capture-phase listener on the container for vehicle hit detection.
 export function createVehicleCanvasLayer(L: any) {
 	return L.Layer.extend({
 		_canvas: undefined as HTMLCanvasElement | undefined,

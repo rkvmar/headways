@@ -5,6 +5,7 @@
 	import TopBar from '$lib/components/TopBar.svelte';
 	import VehiclePopup from '$lib/components/VehiclePopup.svelte';
 	import { PUBLIC_API_BASE_URL } from '$env/static/public';
+	import { graphqlRequest } from '$lib/graphql';
 	import { getVehicleColorForAgency } from '$lib/utils/vehicleColors';
 	import { titleCaseHeadsign } from '$lib/utils/strings';
 	import { getReadableAgencyName } from '$lib/utils/agencyNames';
@@ -16,9 +17,9 @@
 	let updateInterval: NodeJS.Timeout;
 	let agenciesInterval: NodeJS.Timeout;
 	let agencies: Map<number, any> = new Map();
-	let routes: Map<string, any> = new Map(); // Map agency_id:route_id to route info
+	let routes: Map<string, any> = new Map();
 	let userLocationMarker: any;
-	let currentTripLayers: any[] = []; // Store route shape and stop layers
+	let currentTripLayers: any[] = [];
 	let isLoadingTrip = false;
 	let currentTripAbortController: AbortController | null = null;
 	let searchQuery = $state('');
@@ -129,58 +130,24 @@
 		timestamp: number;
 	}
 
-	async function fetchWithTimeout(
-		url: string,
-		signal: AbortSignal,
-		timeoutMs = 30000
-	): Promise<Response> {
-		const controller = new AbortController();
-		const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-		try {
-			// Combine the timeout signal with any external signal
-			const combinedSignal = signal.aborted
-				? signal
-				: combineAbortSignals(signal, controller.signal);
-			return await fetch(url, { signal: combinedSignal });
-		} finally {
-			clearTimeout(timeoutId);
-		}
-	}
-
-	function combineAbortSignals(...signals: AbortSignal[]): AbortSignal {
-		const controller = new AbortController();
-		for (const s of signals) {
-			if (s.aborted) {
-				controller.abort(s.reason);
-				return controller.signal;
-			}
-			s.addEventListener('abort', () => controller.abort(s.reason), { once: true });
-		}
-		return controller.signal;
-	}
-
 	async function fetchAgencies(): Promise<void> {
 		const maxRetries = 3;
 		const baseDelayMs = 1000;
 
 		for (let attempt = 1; attempt <= maxRetries; attempt++) {
 			try {
-				const abortController = new AbortController();
-				const [agenciesResponse, routesResponse, stopsResponse] = await Promise.all([
-					fetchWithTimeout(`${apiBaseUrl}/datafeeds/agency`, abortController.signal),
-					fetchWithTimeout(`${apiBaseUrl}/datafeeds/routes`, abortController.signal),
-					fetchWithTimeout(`${apiBaseUrl}/datafeeds/stops`, abortController.signal)
-				]);
+				const data = await graphqlRequest<{
+					agencies: any[];
+					routes: any[];
+					stops: any[];
+				}>(
+					apiBaseUrl,
+					`{ agencies { agency_id agency_name agency_url agency_timezone agency_lang agency_phone agency_fare_url agency_email } routes { route_id agency_id route_short_name route_long_name route_type route_color route_text_color } stops { stop_id stop_name } }`
+				);
 
-				if (!agenciesResponse.ok || !routesResponse.ok) {
-					throw new Error(
-						`HTTP error! agencies: ${agenciesResponse.status}, routes: ${routesResponse.status}`
-					);
-				}
-
-				const agenciesData = await agenciesResponse.json();
-				const routesData = await routesResponse.json();
-				const stopsData = stopsResponse.ok ? await stopsResponse.json() : [];
+				const agenciesData = data.agencies;
+				const routesData = data.routes;
+				const stopsData = data.stops;
 
 				stopsById.clear();
 				for (const stop of stopsData) {
@@ -236,12 +203,10 @@
 					});
 				}
 
-				// Success — exit retry loop
 				return;
 			} catch (error) {
 				const isAbortError = error instanceof DOMException && error.name === 'AbortError';
 
-				// On the last attempt, log the full error
 				if (attempt === maxRetries) {
 					const context = isAbortError
 						? 'Request aborted — possible timeout or network interruption'
@@ -254,7 +219,6 @@
 					return;
 				}
 
-				// Only retry on AbortError; for other errors (HTTP, parse) give up immediately
 				if (!isAbortError) {
 					console.error(`Error fetching agencies data (attempt ${attempt}/${maxRetries}):`, error);
 					return;
@@ -271,44 +235,22 @@
 
 	async function fetchTransitData(): Promise<TransitVehicle[]> {
 		try {
-			const [vehiclePositionsResponse, tripsResponse] = await Promise.all([
-				fetch(`${apiBaseUrl}/vehiclepositions`),
-				fetch(`${apiBaseUrl}/datafeeds/trips`)
-			]);
+			const data = await graphqlRequest<{
+				vehicleFeed: { fetchedAt: string; data: { entity: any[] } };
+				trips: any[];
+			}>(
+				apiBaseUrl,
+				`{ vehicleFeed { fetchedAt data { entity { id vehicle { trip { tripId routeId directionId delay } position { latitude longitude bearing speed } timestamp stopId currentStopSequence occupancyStatus stopName vehicle { id label } vehicleYear vehicleMake vehicleModel vehicleFuel vehicleLength vehicleIconCode } } } } trips { trip_id route_id service_id trip_headsign direction_id shape_id block_id trip_short_name } }`
+			);
 
-			if (!vehiclePositionsResponse.ok || !tripsResponse.ok) {
-				throw new Error(
-					`HTTP error! vehiclepositions: ${vehiclePositionsResponse.status}, trips: ${tripsResponse.status}`
-				);
-			}
-
-			let vehiclePositionsData, tripsData;
-			try {
-				const parsed = await vehiclePositionsResponse.json();
-				// Support both enveloped format ({ fetchedAt, data }) and raw feed
-				if (parsed.data && parsed.fetchedAt) {
-					lastFetchTime = new Date(parsed.fetchedAt).getTime();
-					vehiclePositionsData = parsed.data;
-				} else {
-					lastFetchTime = Date.now();
-					vehiclePositionsData = parsed;
-				}
-			} catch {
-				console.error('Failed to parse vehicle positions JSON');
-				return [];
-			}
-			try {
-				tripsData = await tripsResponse.json();
-			} catch {
-				console.error('Failed to parse trips JSON');
-				return [];
-			}
+			const vehiclePositionsData = data.vehicleFeed.data;
+			lastFetchTime = new Date(data.vehicleFeed.fetchedAt).getTime();
+			const tripsData = data.trips;
 
 			const tripMap = new Map<string, any>();
 			const routeTripsMap = new Map<string, string[]>();
 			for (const trip of tripsData) {
 				tripMap.set(trip.trip_id, trip);
-				// Build a route → trip_ids map for resolving inconsistent data
 				if (trip.route_id && trip.trip_id) {
 					const trips = routeTripsMap.get(trip.route_id);
 					if (trips) {
@@ -345,15 +287,8 @@
 
 				const position = vehicle.position;
 				if (!position || !position.latitude || !position.longitude) continue;
-
-				// Use the realtime feed's routeId as primary — 511.org's trip-to-route
-				// mapping can be inconsistent (e.g. tripId maps to route U in static data
-				// but routeId says 96). The realtime routeId reflects the actual assignment.
 				const effectiveRouteId = trip.routeId || tripInfo.route_id;
 				const agencyCode = effectiveRouteId?.split(':')[0] || trip.tripId?.split(':')[0];
-
-				// If the realtime route differs from the static trip's route, the trip data
-				// is unreliable for shape/schedule. Find a trip on the correct route instead.
 				const effectiveTripId =
 					trip.routeId && trip.routeId !== tripInfo.route_id
 						? routeTripsMap.get(trip.routeId)?.[0] || trip.tripId
@@ -758,18 +693,16 @@
 	}
 
 	async function fetchTripData(agency: number, tripId: string, signal?: AbortSignal) {
-		const url = `${apiBaseUrl}/tripdetail?trip_id=${encodeURIComponent(tripId)}`;
-		console.log(`Loading trip detail: trip_id=${tripId}, agency=${agency}, url=${url}`);
+		console.log(`Loading trip detail: trip_id=${tripId}, agency=${agency}`);
 		try {
-			const abortController = new AbortController();
-			const combinedSignal = signal
-				? combineAbortSignals(signal, abortController.signal)
-				: abortController.signal;
-			const response = await fetchWithTimeout(url, combinedSignal, 120000);
-			if (!response.ok) {
-				throw new Error(`HTTP error! tripdetail: ${response.status}`);
-			}
-			const data = await response.json();
+			const result = await graphqlRequest<{ tripDetail: any }>(
+				apiBaseUrl,
+				`query($tripId: String!) { tripDetail(tripId: $tripId) { trip_id route_id service_id trip_headsign direction_id shape_id block_id trip_short_name shape schedule { stop_id stop_sequence arrival_time departure_time stop_name stop_lat stop_lon } } }`,
+				{ tripId },
+				signal,
+				120000
+			);
+			const data = result.tripDetail;
 			if (!data || !data.trip_id) {
 				console.warn(`Trip detail returned no data for trip_id=${tripId}`);
 				return null;
@@ -808,7 +741,6 @@
 			const isAbort = error instanceof DOMException && error.name === 'AbortError';
 			const isNetwork = error instanceof TypeError;
 			if (isAbort) {
-				// Silent abort if cancelled by switching vehicles
 				if (!signal?.aborted) {
 					console.error(`Trip detail timeout for trip_id=${tripId}: request exceeded 120s`);
 				}
@@ -833,7 +765,6 @@
 	}
 
 	function selectVehicle(vehicle: TransitVehicle) {
-		// Cancel any in-flight trip data loading
 		if (currentTripAbortController) {
 			currentTripAbortController.abort();
 			currentTripAbortController = null;
@@ -853,7 +784,7 @@
 		setTimeout(() => {
 			selectedVehicle = null;
 			isClosing = false;
-		}, 200); // Match animation duration
+		}, 200);
 	}
 
 	async function fetchShapeForVehicle(
@@ -863,21 +794,13 @@
 		if (!vehicle.shape_id) return [];
 		console.log(`Loading shape for shape_id=${vehicle.shape_id}, vehicle=${vehicle.vehicle_id}`);
 		try {
-			const abortController = new AbortController();
-			const combinedSignal = signal
-				? combineAbortSignals(signal, abortController.signal)
-				: abortController.signal;
-			const response = await fetchWithTimeout(
-				`${apiBaseUrl}/routeshapes?shape_id=${encodeURIComponent(vehicle.shape_id)}`,
-				combinedSignal
+			const result = await graphqlRequest<{ shape: number[][] }>(
+				apiBaseUrl,
+				`query($shapeId: String!) { shape(shapeId: $shapeId) }`,
+				{ shapeId: vehicle.shape_id },
+				signal
 			);
-			if (!response.ok) {
-				console.warn(
-					`Shape fetch failed with status ${response.status} for shape_id=${vehicle.shape_id}`
-				);
-				return [];
-			}
-			const data = await response.json();
+			const data = result.shape;
 			const coords = (data || []).map((c: number[]) => [c[0], c[1]]);
 			console.log(`Shape loaded: shape_id=${vehicle.shape_id}, ${coords.length} points`);
 			return coords;
@@ -892,7 +815,6 @@
 	async function showTripRoute(vehicle: TransitVehicle) {
 		if (!map || !L) return;
 
-		// Create a new abort controller for this trip load
 		currentTripAbortController = new AbortController();
 		const signal = currentTripAbortController.signal;
 
@@ -900,15 +822,12 @@
 		clearTripLayers();
 
 		try {
-			// Get the route color for coloring the line and stop markers
 			const agency = agencies.get(vehicle.agency);
 			const routeColor = getVehicleColorForAgency(vehicle.route_short_name, agency?.name);
 
-			// Start both fetches in parallel, passing the cancellation signal
 			const shapePromise = fetchShapeForVehicle(vehicle, signal);
 			const tripPromise = fetchTripData(vehicle.agency, vehicle.trip_id, signal);
 
-			// Draw shape as soon as it arrives (don't wait for tripdetail)
 			const shapeCoords = await shapePromise;
 			if (shapeCoords.length > 0) {
 				const routeLine = L.polyline(shapeCoords, {
@@ -919,12 +838,10 @@
 				currentTripLayers.push(routeLine);
 			}
 
-			// Wait for trip data for schedule (and fallback shape)
 			const tripData = await tripPromise;
 
 			tripSchedule = tripData?.schedule || null;
 
-			// If shape didn't come from individual file, fall back to tripdata's embedded shape
 			if (shapeCoords.length === 0 && tripData?.shape && tripData.shape.length > 0) {
 				const fallbackCoords = tripData.shape.map((point: number[]) => [point[0], point[1]]);
 				if (fallbackCoords.length > 0) {
@@ -938,7 +855,6 @@
 			}
 
 			if (tripData?.schedule && tripData.schedule.length > 0) {
-				// Sort stops by sequence to determine passed vs upcoming
 				const sortedSchedule = [...tripData.schedule].sort(
 					(a: any, b: any) => a.stop_sequence - b.stop_sequence
 				);
@@ -981,7 +897,6 @@
 				});
 			}
 		} catch (error) {
-			// Ignore abort errors from switching vehicles
 			if (error instanceof DOMException && error.name === 'AbortError') return;
 			console.error('Error showing trip route:', error);
 		} finally {
@@ -1024,7 +939,6 @@
 
 	function toggleAgency(agencyId: number) {
 		if (!enabledAgencies) {
-			// Enable all agencies first, then disable this one
 			const allEnabled = new Set<number>();
 			for (const [id] of agencies) {
 				allEnabled.add(id);
@@ -1033,7 +947,7 @@
 			enabledAgencies = allEnabled;
 		} else if (enabledAgencies.has(agencyId)) {
 			if (enabledAgencies.size === 1) {
-				enabledAgencies = null; // re-enable all
+				enabledAgencies = null;
 			} else {
 				const next = new Set(enabledAgencies);
 				next.delete(agencyId);
@@ -1049,7 +963,6 @@
 
 	function toggleRouteType(routeType: number) {
 		if (!enabledRouteTypes) {
-			// Enable all, then disable this one
 			const allEnabled = new Set<number>();
 			for (const [, route] of routes) {
 				const rt = route.route_type != null ? parseInt(route.route_type) : null;
@@ -1273,12 +1186,10 @@
 			});
 
 			await fetchAgencies();
-			// Refresh static GTFS data hourly — agencies, routes, stops barely change
 			agenciesInterval = setInterval(fetchAgencies, 3600000);
 
 			await updateTransitData();
 			loading = false;
-			// Refresh vehicle positions frequently (they move in real-time)
 			updateInterval = setInterval(updateTransitData, 10000);
 
 			if (navigator.geolocation) {
