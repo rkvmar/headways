@@ -1200,7 +1200,7 @@
 						if (!hasSavedLocation) {
 							map.setView([lat, lng], 13);
 						}
-
+						if (userLocationMarker) map.removeLayer(userLocationMarker);
 						userLocationMarker = L.marker([lat, lng], {
 							icon: createUserLocationIcon(),
 							zIndexOffset: 1000
@@ -1213,6 +1213,29 @@
 						enableHighAccuracy: true,
 						timeout: 10000,
 						maximumAge: 60000
+					}
+				);
+
+				navigator.geolocation.watchPosition(
+					(position) => {
+						const lat = position.coords.latitude;
+						const lng = position.coords.longitude;
+						if (userLocationMarker) {
+							userLocationMarker.setLatLng([lat, lng]);
+						} else {
+							userLocationMarker = L.marker([lat, lng], {
+								icon: createUserLocationIcon(),
+								zIndexOffset: 1000
+							}).addTo(map);
+						}
+					},
+					(error) => {
+						console.log('Geolocation watch error:', error.message);
+					},
+					{
+						enableHighAccuracy: true,
+						timeout: 10000,
+						maximumAge: 5000
 					}
 				);
 			}
