@@ -31,7 +31,6 @@
 	let ledDestinationContainer: HTMLDivElement | null = null;
 	let ledDestinationText: HTMLSpanElement | null = null;
 	let shouldScroll = false;
-	let stopsById: Map<string, string> = $state(new Map());
 	const PINNED_STORAGE_KEY = 'headways:pinned-vehicles';
 	const SETTINGS_STORAGE_KEY = 'headways:settings';
 	const DEFAULT_MAP_VIEW = { lat: 37.75063, lng: -122.43276, zoom: 10 };
@@ -139,22 +138,13 @@
 				const data = await graphqlRequest<{
 					agencies: any[];
 					routes: any[];
-					stops: any[];
 				}>(
 					apiBaseUrl,
-					`{ agencies { agency_id agency_name agency_url agency_timezone agency_lang agency_phone agency_fare_url agency_email } routes { route_id agency_id route_short_name route_long_name route_type route_color route_text_color } stops { stop_id stop_name } }`
+					`{ agencies { agency_id agency_name agency_url agency_timezone agency_lang agency_phone agency_fare_url agency_email } routes { route_id agency_id route_short_name route_long_name route_type route_color route_text_color } }`
 				);
 
 				const agenciesData = data.agencies;
 				const routesData = data.routes;
-				const stopsData = data.stops;
-
-				stopsById.clear();
-				for (const stop of stopsData) {
-					if (stop.stop_id && stop.stop_name) {
-						stopsById.set(stop.stop_id, stop.stop_name);
-					}
-				}
 
 				agencies.clear();
 				routes.clear();
@@ -237,29 +227,13 @@
 		try {
 			const data = await graphqlRequest<{
 				vehicleFeed: { fetchedAt: string; data: { entity: any[] } };
-				trips: any[];
 			}>(
 				apiBaseUrl,
-				`{ vehicleFeed { fetchedAt data { entity { id vehicle { trip { tripId routeId directionId delay } position { latitude longitude bearing speed } timestamp stopId currentStopSequence occupancyStatus stopName vehicle { id label } vehicleYear vehicleMake vehicleModel vehicleFuel vehicleLength vehicleIconCode } } } } trips { trip_id route_id service_id trip_headsign direction_id shape_id block_id trip_short_name } }`
+				`{ vehicleFeed { fetchedAt data { entity { id vehicle { trip { tripId routeId directionId delay tripInfoFound tripHeadsign serviceId shapeId blockId tripShortName } position { latitude longitude bearing speed } timestamp stopId currentStopSequence occupancyStatus stopName vehicle { id label } vehicleYear vehicleMake vehicleModel vehicleFuel vehicleLength vehicleIconCode } } } } }`
 			);
 
 			const vehiclePositionsData = data.vehicleFeed.data;
 			lastFetchTime = new Date(data.vehicleFeed.fetchedAt).getTime();
-			const tripsData = data.trips;
-
-			const tripMap = new Map<string, any>();
-			const routeTripsMap = new Map<string, string[]>();
-			for (const trip of tripsData) {
-				tripMap.set(trip.trip_id, trip);
-				if (trip.route_id && trip.trip_id) {
-					const trips = routeTripsMap.get(trip.route_id);
-					if (trips) {
-						trips.push(trip.trip_id);
-					} else {
-						routeTripsMap.set(trip.route_id, [trip.trip_id]);
-					}
-				}
-			}
 
 			const agencyCodeToNumericId = new Map<string, number>();
 			for (const [numericId, agency] of agencies.entries()) {
@@ -280,19 +254,13 @@
 				if (!vehicle) continue;
 
 				const trip = vehicle.trip;
-				if (!trip || !trip.tripId) continue;
-
-				const tripInfo = tripMap.get(trip.tripId);
-				if (!tripInfo) continue;
+				if (!trip || !trip.tripId || !trip.tripInfoFound) continue;
 
 				const position = vehicle.position;
 				if (!position || !position.latitude || !position.longitude) continue;
-				const effectiveRouteId = trip.routeId || tripInfo.route_id;
+
+				const effectiveRouteId = trip.routeId;
 				const agencyCode = effectiveRouteId?.split(':')[0] || trip.tripId?.split(':')[0];
-				const effectiveTripId =
-					trip.routeId && trip.routeId !== tripInfo.route_id
-						? routeTripsMap.get(trip.routeId)?.[0] || trip.tripId
-						: trip.tripId;
 				const numericAgencyId = agencyCodeToNumericId.get(agencyCode) || 1;
 
 				const routeInfo = routes.get(effectiveRouteId);
@@ -306,37 +274,33 @@
 					agency_code: agencyCode,
 					vehicle_id: vehicle.vehicle?.id || entity.id,
 					unique_id: uniqueId,
-					trip_id: effectiveTripId,
+					trip_id: trip.tripId,
 					lat: position.latitude,
 					lon: position.longitude,
-					deviation: vehicle.trip?.delay ?? 0,
+					deviation: trip.delay ?? 0,
 					timestamp: vehicle.timestamp ? parseInt(vehicle.timestamp) : Date.now() / 1000,
 					is_anomaly: false,
 					next_stop_id: vehicle.stopId || '',
 					next_stop_seq: vehicle.currentStopSequence || 0,
-					next_stop_name: vehicle.stopName || stopsById.get(vehicle.stopId || '') || '',
-					current_headsign: tripInfo.trip_headsign || '',
+					next_stop_name: vehicle.stopName || '',
+					current_headsign: trip.tripHeadsign || '',
 					occupancy: vehicle.occupancyStatus || null,
 					trip_type: '0',
 					car_count: null,
 					bearing: position.bearing || 0,
 					speed: position.speed || 0,
 					route_id: effectiveRouteId,
-					trip_headsign: tripInfo.trip_headsign || '',
-					service_id: tripInfo.service_id || '',
-					direction_id:
-						trip.directionId !== undefined ? trip.directionId : tripInfo.direction_id || 0,
-					block_id: tripInfo.block_id || '',
-					block_name: tripInfo.block_id || null,
+					trip_headsign: trip.tripHeadsign || '',
+					service_id: trip.serviceId || '',
+					direction_id: trip.directionId !== undefined ? trip.directionId : 0,
+					block_id: trip.blockId || '',
+					block_name: trip.blockId || null,
 					route_short_name: routeShortName,
-					shape_id:
-						effectiveTripId !== trip.tripId
-							? tripMap.get(effectiveTripId)?.shape_id || ''
-							: tripInfo.shape_id || '',
+					shape_id: trip.shapeId || '',
 					trip_start_timestamp: 0,
 					trip_start_seq: 0,
 					trip_end_seq: 0,
-					trip_short_name: tripInfo.trip_short_name || '',
+					trip_short_name: trip.tripShortName || '',
 					min: 0,
 					max: 0,
 					year: vehicle.vehicleYear || 0,
@@ -345,7 +309,7 @@
 					fuel: vehicle.vehicleFuel || '',
 					length: vehicle.vehicleLength || 0,
 					icon_code: vehicle.vehicleIconCode || '',
-					short_headsign: tripInfo.trip_headsign || ''
+					short_headsign: trip.tripHeadsign || ''
 				});
 			}
 
@@ -1273,7 +1237,7 @@
 		rel="stylesheet"
 		href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200"
 	/>
-	<link rel="manifest" href="/manifest.json" />
+	<link rel="manifest" href="./manifest.json" />
 	<meta name="apple-mobile-web-app-capable" content="yes" />
 	<meta name="apple-mobile-web-app-status-bar-style" content="default" />
 	<meta name="apple-mobile-web-app-title" content="Headways" />
@@ -1281,11 +1245,11 @@
 		name="viewport"
 		content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no"
 	/>
-	<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon-180x180.png" />
-	<link rel="apple-touch-icon" sizes="167x167" href="/apple-touch-icon-167x167.png" />
-	<link rel="apple-touch-icon" sizes="152x152" href="/apple-touch-icon-152x152.png" />
-	<link rel="apple-touch-icon" sizes="120x120" href="/apple-touch-icon-120x120.png" />
-	<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+	<link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon-180x180.png" />
+	<link rel="apple-touch-icon" sizes="167x167" href="./apple-touch-icon-167x167.png" />
+	<link rel="apple-touch-icon" sizes="152x152" href="./apple-touch-icon-152x152.png" />
+	<link rel="apple-touch-icon" sizes="120x120" href="./apple-touch-icon-120x120.png" />
+	<link rel="apple-touch-icon" href="./apple-touch-icon.png" />
 	<meta name="theme-color" content="#2563eb" />
 	<meta name="mobile-web-app-capable" content="yes" />
 	<meta name="application-name" content="Headways" />
@@ -1537,7 +1501,7 @@
 
 <style>
 	.map-container {
-		--top-bar-height: 56px;
+		--top-bar-height: calc(56px + var(--s, env(safe-area-inset-top)));
 		width: 100vw;
 		height: 100vh;
 		margin: 0;

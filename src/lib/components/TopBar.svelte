@@ -21,7 +21,7 @@
 
 <div class="top-bar">
 	<div class="logo">
-		<img src="/SVG/Logo_Transparent.svg" alt="Headways Logo" class="logo-img" />
+		<img src="./SVG/Logo_Transparent.svg" alt="Headways Logo" class="logo-img" />
 		<p>Headways</p>
 	</div>
 	<div class="search-container">
@@ -60,7 +60,8 @@
 		align-items: center;
 		gap: 8px;
 		padding: 10px 12px;
-		height: var(--top-bar-height, 56px);
+		padding-top: calc(10px + var(--s, env(safe-area-inset-top)));
+		height: calc(var(--top-bar-height, 56px) + var(--s, env(safe-area-inset-top)));
 		background: #e24b4b;
 		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 		box-sizing: border-box;

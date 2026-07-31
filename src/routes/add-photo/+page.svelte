@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { PUBLIC_API_BASE_URL } from '$env/static/public';
+	import { onMount } from 'svelte';
 
 	const AGENCY_OPTIONS = [
 		{ code: 'SF', name: 'SF Muni' },
@@ -23,8 +24,13 @@
 		{ code: 'PA', name: 'Pasadena Transit' }
 	];
 
-	let vehicleId = $state($page.url.searchParams.get('vehicle_id') || '');
-	let agencyCode = $state($page.url.searchParams.get('agency') || '');
+	let vehicleId = $state('');
+	let agencyCode = $state('');
+
+	onMount(() => {
+		vehicleId = $page.url.searchParams.get('vehicle_id') || '';
+		agencyCode = $page.url.searchParams.get('agency') || '';
+	});
 
 	let imageUrl = $state('');
 	let attribution = $state('');
