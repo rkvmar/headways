@@ -137,25 +137,20 @@
 			try {
 				const data = await graphqlRequest<{
 					agencies: any[];
-					routes: any[];
 				}>(
 					apiBaseUrl,
-					`{ agencies { agency_id agency_name agency_url agency_timezone agency_lang agency_phone agency_fare_url agency_email } routes { route_id agency_id route_short_name route_long_name route_type route_color route_text_color } }`
+					`{ agencies { agency_id agency_name } }`
 				);
 
 				const agenciesData = data.agencies;
-				const routesData = data.routes;
 
 				agencies.clear();
-				routes.clear();
 
-				const agencyIdMap = new Map<string, number>();
 				let nextNumericId = 1;
 
 				for (const agency of agenciesData) {
 					const agencyCode = agency.agency_id;
 					const numericId = nextNumericId++;
-					agencyIdMap.set(agencyCode, numericId);
 
 					agencies.set(numericId, {
 						id: numericId,
@@ -163,33 +158,7 @@
 						name: agency.agency_name,
 						short_name: agency.agency_id,
 						color: '',
-						text_color: '',
-						url: agency.agency_url,
-						timezone: agency.agency_timezone,
-						lang: agency.agency_lang,
-						phone: agency.agency_phone,
-						fare_url: agency.agency_fare_url,
-						email: agency.agency_email
-					});
-
-				}
-
-				for (const route of routesData) {
-					const agencyCode = route.agency_id;
-					const numericId = agencyIdMap.get(agencyCode);
-					if (!numericId) continue;
-
-					const routeKey = route.route_id;
-					routes.set(routeKey, {
-						route_id: route.route_id,
-						route_short_name: route.route_short_name,
-						route_long_name: route.route_long_name,
-						agency_code: agencyCode,
-						route_color: route.route_color,
-						route_text_color: route.route_text_color,
-						route_type: route.route_type,
-						...route,
-						agency_id: numericId
+						text_color: ''
 					});
 				}
 
@@ -223,13 +192,32 @@
 		}
 	}
 
+	async function fetchRoutes(): Promise<void> {
+		try {
+			const data = await graphqlRequest<{ routes: any[] }>(
+				apiBaseUrl,
+				`{ routes { route_id route_short_name route_long_name route_type } }`
+			);
+
+			routes.clear();
+			for (const route of data.routes) {
+				if (route.route_id) {
+					routes.set(route.route_id, route);
+				}
+			}
+			updateVehicleMarkers(allVehicles);
+		} catch (error) {
+			console.error('Error fetching routes data:', error);
+		}
+	}
+
 	async function fetchTransitData(): Promise<TransitVehicle[]> {
 		try {
 			const data = await graphqlRequest<{
 				vehicleFeed: { fetchedAt: string; data: { entity: any[] } };
 			}>(
 				apiBaseUrl,
-				`{ vehicleFeed { fetchedAt data { entity { id vehicle { trip { tripId routeId directionId delay tripInfoFound tripHeadsign serviceId shapeId blockId tripShortName } position { latitude longitude bearing speed } timestamp stopId currentStopSequence occupancyStatus stopName vehicle { id label } vehicleYear vehicleMake vehicleModel vehicleFuel vehicleLength vehicleIconCode } } } } }`
+				`{ vehicleFeed { fetchedAt data { entity { id vehicle { trip { tripId routeId directionId delay tripInfoFound tripHeadsign serviceId shapeId blockId tripShortName } position { latitude longitude bearing speed } timestamp stopId currentStopSequence occupancyStatus stopName vehicle { id label } vehicleYear vehicleMake vehicleModel vehicleFuel vehicleLength vehicleIconCode routeShortName } } } } }`
 			);
 
 			const vehiclePositionsData = data.vehicleFeed.data;
@@ -263,8 +251,7 @@
 				const agencyCode = effectiveRouteId?.split(':')[0] || trip.tripId?.split(':')[0];
 				const numericAgencyId = agencyCodeToNumericId.get(agencyCode) || 1;
 
-				const routeInfo = routes.get(effectiveRouteId);
-				const routeShortName = routeInfo?.route_short_name || effectiveRouteId?.split(':')[1] || '';
+				const routeShortName = vehicle.routeShortName || effectiveRouteId?.split(':')[1] || '';
 
 				const uniqueId = `${agencyCode}:${vehicle.vehicle?.id || entity.id}`;
 
@@ -893,9 +880,9 @@
 		if (enabledAgencies && !enabledAgencies.has(vehicle.agency)) return false;
 
 		if (enabledRouteTypes) {
-			const routeInfo = routes.get(vehicle.route_id);
-			const routeType = routeInfo?.route_type != null ? parseInt(routeInfo.route_type) : null;
-			if (routeType != null && !enabledRouteTypes.has(routeType)) return false;
+			const routeType = routes.get(vehicle.route_id)?.route_type;
+			const parsedType = routeType != null ? parseInt(routeType) : null;
+			if (parsedType != null && !enabledRouteTypes.has(parsedType)) return false;
 		}
 
 		return true;
@@ -928,9 +915,8 @@
 	function toggleRouteType(routeType: number) {
 		if (!enabledRouteTypes) {
 			const allEnabled = new Set<number>();
-			for (const [, route] of routes) {
-				const rt = route.route_type != null ? parseInt(route.route_type) : null;
-				if (rt != null) allEnabled.add(rt);
+			for (const typeStr of Object.keys(routeTypeNames)) {
+				allEnabled.add(parseInt(typeStr));
 			}
 			allEnabled.delete(routeType);
 			enabledRouteTypes = allEnabled;
@@ -972,12 +958,10 @@
 
 		const query = searchQuery.toLowerCase();
 		const agency = agencies.get(vehicle.agency);
-		const routeKey = vehicle.route_id;
-		const routeInfo = routes.get(routeKey);
 
 		if (vehicle.route_short_name?.toLowerCase().includes(query)) return true;
 
-		if (routeInfo?.route_long_name?.toLowerCase().includes(query)) return true;
+		if (routes.get(vehicle.route_id)?.route_long_name?.toLowerCase().includes(query)) return true;
 
 		if (vehicle.vehicle_id?.toString().toLowerCase().includes(query)) return true;
 
@@ -1150,11 +1134,16 @@
 			});
 
 			await fetchAgencies();
-			agenciesInterval = setInterval(fetchAgencies, 3600000);
+			agenciesInterval = setInterval(() => {
+				fetchAgencies();
+				fetchRoutes();
+			}, 3600000);
 
 			await updateTransitData();
 			loading = false;
 			updateInterval = setInterval(updateTransitData, 10000);
+
+			fetchRoutes();
 
 			if (navigator.geolocation) {
 				navigator.geolocation.getCurrentPosition(
