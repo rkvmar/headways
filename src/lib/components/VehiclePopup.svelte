@@ -13,6 +13,7 @@
 		getVehicleColorForAgency = () => '#e5e7eb',
 		pinnedVehicleIds = [] as string[],
 		togglePin = () => {},
+		pinDisabled = false,
 		closeBottomSheet = () => {},
 		formatTime = (time: string) => time,
 		hexToRgba = (hex: string, alpha: number) => '',
@@ -27,6 +28,7 @@
 		getVehicleColorForAgency?: (routeShortName: string, agencyName?: string) => string;
 		pinnedVehicleIds?: string[];
 		togglePin?: (vehicle: any) => void;
+		pinDisabled?: boolean;
 		closeBottomSheet?: () => void;
 		formatTime?: (time: string) => string;
 		hexToRgba?: (hex: string, alpha: number) => string;
@@ -87,6 +89,10 @@
 	});
 
 	let isStopsOpen = $state(false);
+
+	let isVehiclePinned = $derived(
+		selectedVehicle ? pinnedVehicleIds.includes(selectedVehicle.unique_id) : false
+	);
 
 	let tripOrigin = $derived('');
 	let tripDestination = $derived(selectedVehicle?.trip_headsign || '');
@@ -183,18 +189,19 @@
 						<div class="data-age">{relativeTimeText}</div>
 					{/if}
 				</div>
-				<div class="header-buttons">
-					<button
-						class="pin-button"
-						onclick={() => togglePin(selectedVehicle)}
-						aria-label={pinnedVehicleIds.includes(selectedVehicle.unique_id)
-							? 'Unpin vehicle'
-							: 'Pin vehicle'}
-					>
-						{pinnedVehicleIds.includes(selectedVehicle.unique_id) ? 'Unpin' : 'Pin'}
-					</button>
-					<button class="close-button" onclick={closeBottomSheet} aria-label="Close">×</button>
-				</div>
+			<div class="header-buttons">
+				<button
+					class="pin-button"
+					class:disabled={!isVehiclePinned && pinDisabled}
+					disabled={!isVehiclePinned && pinDisabled}
+					onclick={() => togglePin(selectedVehicle)}
+					title={!isVehiclePinned && pinDisabled ? 'Pin limit reached (max 3)' : undefined}
+					aria-label={isVehiclePinned ? 'Unpin vehicle' : 'Pin vehicle'}
+				>
+					{isVehiclePinned ? 'Unpin' : 'Pin'}
+				</button>
+				<button class="close-button" onclick={closeBottomSheet} aria-label="Close">×</button>
+			</div>
 			</div>
 		</div>
 
@@ -240,7 +247,7 @@
 			</div>
 		</div>
 
-		<div class="section-title">Photos</div>
+		<!-- <div class="section-title">Photos</div>
 		{#if imagesLoading}
 			<div class="photo-placeholder">Loading...</div>
 		{:else if vehicleImages.length > 0}
@@ -264,7 +271,7 @@
 				)}&agency={encodeURIComponent(agency?.code || '')}"
 				class="add-photo-link">Add Photo</a
 			>
-		</div>
+		</div> -->
 
 	<div>
 		<div class="section-title">Vehicle Info</div>
@@ -312,7 +319,7 @@
 <style>
 	.popup {
 		position: fixed;
-		top: 66px;
+		top: var(--top-bar-height);
 		bottom: 10px;
 		left: 10px;
 		width: 300px;
@@ -492,6 +499,18 @@
 
 	.pin-button:hover {
 		background: #1d4ed8;
+	}
+
+	.pin-button.disabled,
+	.pin-button:disabled {
+		background: #bfdbfe;
+		color: #dbeafe;
+		cursor: not-allowed;
+	}
+
+	.pin-button.disabled:hover,
+	.pin-button:disabled:hover {
+		background: #bfdbfe;
 	}
 
 	.close-button {

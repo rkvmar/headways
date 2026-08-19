@@ -9,6 +9,13 @@
 	import { getVehicleColorForAgency } from '$lib/utils/vehicleColors';
 	import { titleCaseHeadsign } from '$lib/utils/strings';
 	import { getReadableAgencyName } from '$lib/utils/agencyNames';
+	import {
+		startLiveActivity,
+		updateLiveActivity,
+		endLiveActivity,
+		formatDeviation
+	} from '$lib/liveActivities';
+	import type { LiveActivityVehicle } from '$lib/liveActivities';
 
 	let mapContainer: HTMLDivElement;
 	let map: any;
@@ -34,8 +41,12 @@
 	const PINNED_STORAGE_KEY = 'headways:pinned-vehicles';
 	const SETTINGS_STORAGE_KEY = 'headways:settings';
 	const DEFAULT_MAP_VIEW = { lat: 37.75063, lng: -122.43276, zoom: 10 };
+	const MAX_PINNED_VEHICLES = 3;
 	let pinnedVehicleIds: string[] = $state([]);
 	let pinnedSnapshots: Record<string, PinnedVehicleSnapshot> = $state({});
+	let pinDisabled = $derived(pinnedVehicleIds.length >= MAX_PINNED_VEHICLES);
+	let pendingDeepLinkId: string | null = null;
+	let pendingDeepLinkTimer: ReturnType<typeof setTimeout> | null = null;
 	let settingsOpen = $state(false);
 	let filtersOpen = $state(false);
 	let enabledAgencies: Set<number> | null = $state(null); // null = all enabled
@@ -137,10 +148,7 @@
 			try {
 				const data = await graphqlRequest<{
 					agencies: any[];
-				}>(
-					apiBaseUrl,
-					`{ agencies { agency_id agency_name } }`
-				);
+				}>(apiBaseUrl, `{ agencies { agency_id agency_name } }`);
 
 				const agenciesData = data.agencies;
 
@@ -302,7 +310,7 @@
 
 			return vehicles;
 		} catch (error) {
-			console.error('Error fetching transit data:', error);
+			console.error('Error fetching transit data:', error, error instanceof Error ? error.name + ': ' + error.message : String(error));
 			return [];
 		}
 	}
@@ -354,10 +362,6 @@
 			if (!raw) return;
 			const parsed = JSON.parse(raw);
 
-			if (typeof parsed?.apiBaseUrl === 'string') {
-				apiBaseUrl = parsed.apiBaseUrl;
-			}
-
 			const lat = Number(parsed?.defaultLat);
 			const lng = Number(parsed?.defaultLng);
 			const zoom = Number(parsed?.defaultZoom);
@@ -383,7 +387,6 @@
 			localStorage.setItem(
 				SETTINGS_STORAGE_KEY,
 				JSON.stringify({
-					apiBaseUrl,
 					defaultLat,
 					defaultLng,
 					defaultZoom,
@@ -445,18 +448,45 @@
 		};
 	}
 
+	function toLiveActivityVehicle(vehicle: TransitVehicle): LiveActivityVehicle {
+		const agency = agencies.get(vehicle.agency);
+		return {
+			uniqueId: vehicle.unique_id,
+			vehicleId: vehicle.vehicle_id,
+			routeNumber: getDisplayName(vehicle, agency, routes.get(vehicle.route_id)),
+			headsign: titleCaseHeadsign(vehicle.trip_headsign) || 'No destination',
+			agencyName: getReadableAgencyName(agency?.name) || 'Unknown agency',
+			nextStop: vehicle.next_stop_name || '—',
+			deviationText: formatDeviation(vehicle.deviation),
+			routeColorHex: getVehicleColorForAgency(vehicle.route_short_name, agency?.name)
+		};
+	}
+
 	function loadPinnedVehiclesFromStorage() {
 		if (!browser) return;
 		try {
 			const raw = localStorage.getItem(PINNED_STORAGE_KEY);
 			if (!raw) return;
-			const parsed = JSON.parse(raw);
-			if (Array.isArray(parsed?.ids)) {
-				pinnedVehicleIds = parsed.ids;
+		const parsed = JSON.parse(raw);
+		if (Array.isArray(parsed?.ids)) {
+			const trimmed = parsed.ids.slice(0, MAX_PINNED_VEHICLES);
+			if (trimmed.length < parsed.ids.length) {
+				for (const id of parsed.ids.slice(MAX_PINNED_VEHICLES)) {
+					endLiveActivity(id);
+				}
 			}
-			if (parsed?.snapshots && typeof parsed.snapshots === 'object') {
-				pinnedSnapshots = parsed.snapshots;
+			pinnedVehicleIds = trimmed;
+		}
+		if (parsed?.snapshots && typeof parsed.snapshots === 'object') {
+			pinnedSnapshots = parsed.snapshots;
+			for (const id of Object.keys(pinnedSnapshots)) {
+				if (!pinnedVehicleIds.includes(id)) {
+					const next = { ...pinnedSnapshots };
+					delete next[id];
+					pinnedSnapshots = next;
+				}
 			}
+		}
 		} catch (error) {
 			console.warn('Failed to load pinned vehicles from storage:', error);
 		}
@@ -487,11 +517,15 @@
 		delete nextSnapshots[uniqueId];
 		pinnedSnapshots = nextSnapshots;
 		persistPinnedVehicles();
+		endLiveActivity(uniqueId);
 	}
 
 	function togglePin(vehicle: TransitVehicle) {
 		if (isPinned(vehicle)) {
 			unpinVehicleById(vehicle.unique_id);
+			return;
+		}
+		if (pinnedVehicleIds.length >= MAX_PINNED_VEHICLES) {
 			return;
 		}
 		pinnedVehicleIds = [...pinnedVehicleIds, vehicle.unique_id];
@@ -500,6 +534,7 @@
 			[vehicle.unique_id]: toPinnedSnapshot(vehicle)
 		};
 		persistPinnedVehicles();
+		startLiveActivity(toLiveActivityVehicle(vehicle));
 	}
 
 	function refreshPinnedSnapshots(vehicles: TransitVehicle[]) {
@@ -512,6 +547,7 @@
 			if (pinnedSet.has(vehicle.unique_id)) {
 				nextSnapshots[vehicle.unique_id] = toPinnedSnapshot(vehicle);
 				didUpdate = true;
+				updateLiveActivity(toLiveActivityVehicle(vehicle));
 			}
 		}
 
@@ -544,6 +580,29 @@
 		if (liveVehicle) {
 			selectVehicle(liveVehicle);
 		}
+	}
+
+	// ponytail: pending until the feed shows the vehicle, else a cold-launch
+	// deep link would open nothing; 30s ceiling so a vehicle that never
+	// reappears doesn't pop a stale popup later.
+	function tryOpenDeepLink() {
+		const id = pendingDeepLinkId;
+		if (!id) return;
+		if (allVehicles.some((vehicle) => vehicle.unique_id === id)) {
+			jumpToVehicleById(id);
+			pendingDeepLinkId = null;
+		}
+	}
+
+	function handleVehicleOpen(event: Event) {
+		const uniqueId = (event as CustomEvent).detail?.uniqueId;
+		if (typeof uniqueId !== 'string' || !uniqueId) return;
+		pendingDeepLinkId = uniqueId;
+		if (pendingDeepLinkTimer) clearTimeout(pendingDeepLinkTimer);
+		pendingDeepLinkTimer = setTimeout(() => {
+			pendingDeepLinkId = null;
+		}, 30000);
+		tryOpenDeepLink();
 	}
 
 	function getAgencyLogo(agency?: any, vehicle?: TransitVehicle): string | null {
@@ -1070,10 +1129,9 @@
 						? getTimelinessColor(v.deviation)
 						: getVehicleColorForAgency(v.route_short_name, agencies.get(v.agency)?.name),
 				routeNumber: getDisplayName(v, agencies.get(v.agency), routes.get(v.route_id)),
-				routeTooltip:
-					routes.get(v.route_id)?.route_long_name
-						? `${routes.get(v.route_id)?.route_short_name} - ${routes.get(v.route_id)?.route_long_name}`
-						: v.route_short_name,
+				routeTooltip: routes.get(v.route_id)?.route_long_name
+					? `${routes.get(v.route_id)?.route_short_name} - ${routes.get(v.route_id)?.route_long_name}`
+					: v.route_short_name,
 				agencyId: v.agency
 			}));
 
@@ -1086,6 +1144,7 @@
 		updateVehicleMarkers(vehicles);
 		refreshPinnedSnapshots(vehicles);
 		nowTick = Date.now();
+		tryOpenDeepLink();
 	}
 
 	function handleSearchInput() {
@@ -1094,6 +1153,7 @@
 
 	onMount(async () => {
 		if (browser) {
+			window.addEventListener('headways:vehicleOpen', handleVehicleOpen);
 			loadPinnedVehiclesFromStorage();
 			loadSettingsFromStorage();
 			L = (await import('leaflet')).default;
@@ -1142,6 +1202,13 @@
 			await updateTransitData();
 			loading = false;
 			updateInterval = setInterval(updateTransitData, 10000);
+
+			// Rehydrate Live Activities for pinned vehicles across app launches
+			// (the native plugin is idempotent by uniqueId).
+			for (const pinnedId of pinnedVehicleIds) {
+				const vehicle = allVehicles.find((v) => v.unique_id === pinnedId);
+				if (vehicle) startLiveActivity(toLiveActivityVehicle(vehicle));
+			}
 
 			fetchRoutes();
 
@@ -1196,6 +1263,10 @@
 	});
 
 	onDestroy(() => {
+		window.removeEventListener('headways:vehicleOpen', handleVehicleOpen);
+		if (pendingDeepLinkTimer) {
+			clearTimeout(pendingDeepLinkTimer);
+		}
 		if (updateInterval) {
 			clearInterval(updateInterval);
 		}
@@ -1475,6 +1546,7 @@
 			{agencies}
 			{routes}
 			{isClosing}
+			{pinDisabled}
 			{getAgencyLogo}
 			{getVehicleColorForAgency}
 			{pinnedVehicleIds}
@@ -1500,7 +1572,7 @@
 
 	.settings-panel {
 		position: absolute;
-		top: 66px;
+		top: calc(var(--top-bar-height) + 10px);
 		right: 12px;
 		z-index: 1000;
 		width: 260px;
@@ -1571,7 +1643,7 @@
 
 	.filters-panel {
 		position: absolute;
-		top: 66px;
+		top: calc(var(--top-bar-height) + 10px);
 		right: 12px;
 		z-index: 1000;
 		width: 240px;
@@ -1649,7 +1721,7 @@
 
 	.pinned-panel {
 		position: absolute;
-		top: 66px;
+		top: calc(var(--top-bar-height) + 10px);
 		right: 10px;
 		z-index: 1000;
 		width: 260px;
@@ -1664,7 +1736,6 @@
 
 	@media (max-width: 1000px) {
 		.pinned-panel {
-			top: 64px;
 			right: 8px;
 			width: 220px;
 			max-height: 40vh;
@@ -1803,11 +1874,6 @@
 		}
 	}
 
-	:global(.leaflet-container) {
-		height: 100%;
-		width: 100%;
-	}
-
 	:global(.vehicle-marker) {
 		background: transparent !important;
 		border: none !important;
@@ -1836,6 +1902,7 @@
 		margin: 0 !important;
 	}
 
+	:global(html),
 	:global(body) {
 		margin: 0;
 		padding: 0;
