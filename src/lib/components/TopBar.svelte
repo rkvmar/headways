@@ -1,22 +1,11 @@
 <script lang="ts">
 	export let searchQuery: string;
-	export let settingsOpen = false;
+	export let darkMode = false;
 	export let filtersOpen = false;
 	export let placeholder = 'Search';
 	export let onSearchInput: () => void = () => {};
-	export let onToggleSettings: () => void = () => {};
+	export let onToggleDarkMode: () => void = () => {};
 	export let onToggleFilters: () => void = () => {};
-
-	let isSpinning = false;
-
-	function handleClick() {
-		isSpinning = true;
-		onToggleSettings();
-	}
-
-	function handleAnimationEnd() {
-		isSpinning = false;
-	}
 </script>
 
 <div class="top-bar">
@@ -37,13 +26,9 @@
 		<button class="topbar-button" onclick={onToggleFilters} aria-label="Filters">
 			<span class="material-symbols-outlined" class:active={filtersOpen}> tune </span>
 		</button>
-		<button class="topbar-button" onclick={handleClick} aria-label="Settings">
-			<span
-				class="material-symbols-outlined"
-				class:spinning={isSpinning}
-				onanimationend={handleAnimationEnd}
-			>
-				settings
+		<button class="topbar-button" onclick={onToggleDarkMode} aria-label="Toggle dark mode">
+			<span class="material-symbols-outlined">
+				{darkMode ? 'light_mode' : 'dark_mode'}
 			</span>
 		</button>
 	</div>
@@ -117,18 +102,6 @@
 		opacity: 1;
 	}
 
-	.topbar-button .material-symbols-outlined.spinning {
-		animation: spin 0.4s ease-out;
-	}
-
-	@keyframes spin {
-		from {
-			transform: rotate(0deg);
-		}
-		to {
-			transform: rotate(120deg);
-		}
-	}
 	.logo {
 		display: flex;
 		flex-direction: row;

@@ -20,6 +20,7 @@
 
 	let mapContainer: HTMLDivElement;
 	let map: any;
+	let tileLayer: any;
 	let L: any;
 	let vehicleCanvasLayer: any;
 	let updateInterval: NodeJS.Timeout;
@@ -48,7 +49,7 @@
 	let pinDisabled = $derived(pinnedVehicleIds.length >= MAX_PINNED_VEHICLES);
 	let pendingDeepLinkId: string | null = null;
 	let pendingDeepLinkTimer: ReturnType<typeof setTimeout> | null = null;
-	let settingsOpen = $state(false);
+	let darkMode = $state(false);
 	let filtersOpen = $state(false);
 	let enabledAgencies: Set<number> | null = $state(null); // null = all enabled
 	let enabledRouteTypes: Set<number> | null = $state(null); // null = all enabled
@@ -395,6 +396,9 @@
 			if (parsed?.colorMode === 'route' || parsed?.colorMode === 'timeliness') {
 				colorMode = parsed.colorMode;
 			}
+			if (typeof parsed?.darkMode === 'boolean') {
+				darkMode = parsed.darkMode;
+			}
 		} catch (error) {
 			console.warn('Failed to load settings from storage:', error);
 		}
@@ -409,7 +413,8 @@
 					defaultLat,
 					defaultLng,
 					defaultZoom,
-					colorMode
+					colorMode,
+					darkMode
 				})
 			);
 		} catch (error) {
@@ -417,39 +422,21 @@
 		}
 	}
 
-	function applyLocationSettings() {
-		const lat = Number(defaultLat);
-		const lng = Number(defaultLng);
-		const zoom = Number(defaultZoom);
-
-		if (Number.isNaN(lat) || Number.isNaN(lng) || Number.isNaN(zoom)) return;
-
-		defaultLat = lat;
-		defaultLng = lng;
-		defaultZoom = zoom;
-		hasSavedLocation = true;
-
-		persistSettings();
-
-		if (map) {
-			map.setView([lat, lng], zoom, { animate: true });
+	function toggleDarkMode() {
+		darkMode = !darkMode;
+		if (tileLayer && map) {
+			map.removeLayer(tileLayer);
+			tileLayer = L.tileLayer(
+				darkMode
+					? 'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}.png'
+					: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}.png',
+				{
+					attribution:
+						'&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>, &copy; <a href="https://carto.com/attributions">CARTO</a>'
+				}
+			).addTo(map);
 		}
-	}
-
-	function setDefaultLocationFromMap() {
-		if (!map) return;
-		const center = map.getCenter();
-		defaultLat = Number(center.lat.toFixed(5));
-		defaultLng = Number(center.lng.toFixed(5));
-		defaultZoom = map.getZoom();
-		hasSavedLocation = true;
 		persistSettings();
-	}
-
-	async function handleApiBaseChange() {
-		persistSettings();
-		await fetchAgencies();
-		await updateTransitData();
 	}
 
 	function toPinnedSnapshot(vehicle: TransitVehicle): PinnedVehicleSnapshot {
@@ -1353,8 +1340,10 @@
 			// 	map.smoothWheelZoom.enable();
 			// }
 
-			L.tileLayer(
-				'https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}.png',
+			tileLayer = L.tileLayer(
+				darkMode
+					? 'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}.png'
+					: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}.png',
 				{
 					attribution:
 						'&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>, &copy; <a href="https://carto.com/attributions">CARTO</a>'
@@ -1497,68 +1486,14 @@
 <div class="map-container">
 	<TopBar
 		bind:searchQuery
-		{settingsOpen}
+		{darkMode}
 		{filtersOpen}
 		onSearchInput={handleSearchInput}
-		onToggleSettings={() => {
-			settingsOpen = !settingsOpen;
-			if (settingsOpen) filtersOpen = false;
-		}}
+		onToggleDarkMode={toggleDarkMode}
 		onToggleFilters={() => {
 			filtersOpen = !filtersOpen;
-			if (filtersOpen) settingsOpen = false;
 		}}
 	/>
-
-	{#if settingsOpen}
-		<div class="settings-panel">
-			<h3 class="settings-title">Settings</h3>
-			<!-- <div class="settings-group">
-				<label class="settings-label" for="api-base">API Base URL</label>
-				<input
-					id="api-base"
-					class="settings-input"
-					type="text"
-					bind:value={apiBaseUrl}
-					placeholder="http://localhost:8080"
-					onchange={handleApiBaseChange}
-				/>
-			</div> -->
-
-			<div class="settings-group">
-				<label class="settings-label">Default Map Location</label>
-				<div class="settings-row">
-					<input
-						class="settings-input"
-						type="number"
-						step="0.00001"
-						bind:value={defaultLat}
-						placeholder="Latitude"
-					/>
-					<input
-						class="settings-input"
-						type="number"
-						step="0.00001"
-						bind:value={defaultLng}
-						placeholder="Longitude"
-					/>
-				</div>
-				<div class="settings-row">
-					<input
-						class="settings-input"
-						type="number"
-						step="1"
-						bind:value={defaultZoom}
-						placeholder="Zoom"
-					/>
-					<button class="settings-action" onclick={applyLocationSettings}>Apply</button>
-				</div>
-				<button class="settings-secondary" onclick={setDefaultLocationFromMap}>
-					Use Current View
-				</button>
-			</div>
-		</div>
-	{/if}
 
 	{#if filtersOpen}
 		<div class="filters-panel">
@@ -1765,77 +1700,6 @@
 		margin: 0;
 		padding: 0;
 		position: relative;
-	}
-
-	.settings-panel {
-		position: absolute;
-		top: calc(var(--top-bar-height) + 10px);
-		right: 12px;
-		z-index: 1000;
-		width: 260px;
-		background: white;
-		border-radius: 12px;
-		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
-		padding: 12px;
-		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-	}
-
-	.settings-title {
-		margin: 0 0 10px 0;
-		font-size: 14px;
-		font-weight: 700;
-		color: #111827;
-	}
-
-	.settings-group {
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
-		margin-bottom: 12px;
-	}
-
-	.settings-label {
-		font-size: 12px;
-		font-weight: 600;
-		color: #6b7280;
-	}
-
-	.settings-select,
-	.settings-input {
-		width: 100%;
-		border: 1px solid #e5e7eb;
-		border-radius: 8px;
-		padding: 8px;
-		font-size: 12px;
-		outline: none;
-	}
-
-	.settings-row {
-		display: flex;
-		gap: 8px;
-	}
-
-	.settings-action {
-		border: none;
-		background: #2563eb;
-		color: white;
-		border-radius: 8px;
-		padding: 8px 10px;
-		font-size: 12px;
-		cursor: pointer;
-		font-weight: 600;
-		white-space: nowrap;
-	}
-
-	.settings-secondary {
-		border: 1px solid #e5e7eb;
-		background: #f9fafb;
-		color: #111827;
-		border-radius: 8px;
-		padding: 8px 10px;
-		font-size: 12px;
-		cursor: pointer;
-		font-weight: 600;
 	}
 
 	.filters-panel {
