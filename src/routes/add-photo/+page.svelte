@@ -1,4 +1,6 @@
 <script lang="ts">
+	// Vehicle photos disabled
+	/*
 	import { page } from '$app/stores';
 	import { PUBLIC_API_BASE_URL } from '$env/static/public';
 	import { onMount } from 'svelte';
@@ -66,12 +68,14 @@
 			saving = false;
 		}
 	}
+	*/
 </script>
 
 <svelte:head>
 	<title>Add Photo - Headways</title>
 </svelte:head>
 
+<!-- Vehicle photos disabled
 <div class="container">
 	<a href="/" class="back-link">← Back to map</a>
 	<h1>Add Vehicle Photo</h1>
@@ -138,8 +142,10 @@
 		</button>
 	</form>
 </div>
+-->
 
 <style>
+	/*
 	.container {
 		max-width: 480px;
 		margin: 0 auto;
@@ -260,4 +266,5 @@
 		color: #059669;
 		font-weight: 600;
 	}
+	*/
 </style>

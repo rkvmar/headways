@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { PUBLIC_API_BASE_URL } from '$env/static/public';
+	// Vehicle photos disabled
+	// import { PUBLIC_API_BASE_URL } from '$env/static/public';
 	import { titleCaseHeadsign, titleCase } from '$lib/utils/strings';
 	import { getReadableAgencyName } from '$lib/utils/agencyNames';
 
@@ -62,6 +63,8 @@
 		return days === 1 ? '1d ago' : `${days}d ago`;
 	});
 
+	// Vehicle photos disabled
+	/*
 	let vehicleImages: any[] = [];
 	let imagesLoading = false;
 
@@ -87,6 +90,7 @@
 			vehicleImages = [];
 		}
 	});
+	*/
 
 	let isStopsOpen = $state(false);
 
@@ -113,11 +117,8 @@
 			if (idx >= 0) return idx;
 		}
 
-		const now = selectedVehicle?.timestamp
-			? selectedVehicle.timestamp * 1000
-			: Date.now();
-		const nowMinutes =
-			new Date(now).getHours() * 60 + new Date(now).getMinutes();
+		const now = selectedVehicle?.timestamp ? selectedVehicle.timestamp * 1000 : Date.now();
+		const nowMinutes = new Date(now).getHours() * 60 + new Date(now).getMinutes();
 
 		for (let i = 0; i < sortedStops.length; i++) {
 			const time = sortedStops[i].arrival_time;
@@ -189,19 +190,19 @@
 						<div class="data-age">{relativeTimeText}</div>
 					{/if}
 				</div>
-			<div class="header-buttons">
-				<button
-					class="pin-button"
-					class:disabled={!isVehiclePinned && pinDisabled}
-					disabled={!isVehiclePinned && pinDisabled}
-					onclick={() => togglePin(selectedVehicle)}
-					title={!isVehiclePinned && pinDisabled ? 'Pin limit reached (max 3)' : undefined}
-					aria-label={isVehiclePinned ? 'Unpin vehicle' : 'Pin vehicle'}
-				>
-					{isVehiclePinned ? 'Unpin' : 'Pin'}
-				</button>
-				<button class="close-button" onclick={closeBottomSheet} aria-label="Close">×</button>
-			</div>
+				<div class="header-buttons">
+					<button
+						class="pin-button"
+						class:disabled={!isVehiclePinned && pinDisabled}
+						disabled={!isVehiclePinned && pinDisabled}
+						onclick={() => togglePin(selectedVehicle)}
+						title={!isVehiclePinned && pinDisabled ? 'Pin limit reached (max 3)' : undefined}
+						aria-label={isVehiclePinned ? 'Unpin vehicle' : 'Pin vehicle'}
+					>
+						{isVehiclePinned ? 'Unpin' : 'Pin'}
+					</button>
+					<button class="close-button" onclick={closeBottomSheet} aria-label="Close">×</button>
+				</div>
 			</div>
 		</div>
 
@@ -273,8 +274,8 @@
 			>
 		</div> -->
 
-	<div>
-		<div class="section-title">Vehicle Info</div>
+		<div>
+			<div class="section-title">Vehicle Info</div>
 			<div class="detail-row">
 				<span class="detail-label">Vehicle</span>
 				<span class="detail-value">{selectedVehicle.vehicle_id}</span>
@@ -319,7 +320,7 @@
 <style>
 	.popup {
 		position: fixed;
-		top: var(--top-bar-height);
+		top: calc(var(--top-bar-height) + 10px);
 		bottom: 10px;
 		left: 10px;
 		width: 300px;

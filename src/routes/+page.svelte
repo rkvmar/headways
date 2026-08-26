@@ -4,6 +4,7 @@
 	import { createVehicleCanvasLayer } from '$lib/components/VehicleCanvasLayer';
 	import TopBar from '$lib/components/TopBar.svelte';
 	import VehiclePopup from '$lib/components/VehiclePopup.svelte';
+	import StopPopup from '$lib/components/StopPopup.svelte';
 	import { PUBLIC_API_BASE_URL } from '$env/static/public';
 	import { graphqlRequest } from '$lib/graphql';
 	import { getVehicleColorForAgency } from '$lib/utils/vehicleColors';
@@ -59,6 +60,20 @@
 	let hasSavedLocation = $state(false);
 	let nowTick = $state(Date.now());
 	let tripSchedule: any[] | null = $state(null);
+	let activeTab: 'vehicles' | 'stops' = $state('vehicles');
+	let allStops: {
+		stop_id: string;
+		stop_name: string;
+		stop_lat: number;
+		stop_lon: number;
+		color: string;
+	}[] = $state([]);
+	let stopsLoaded = false;
+	let stopsLoading = $state(false);
+	let stopLayer: any = null;
+	let selectedStop: any | null = $state(null);
+	let stopDepartures: any[] | null = $state(null);
+	let stopIsClosing = $state(false);
 
 	function updateLedScrollState() {
 		if (!ledDestinationContainer || !ledDestinationText) return;
@@ -310,7 +325,11 @@
 
 			return vehicles;
 		} catch (error) {
-			console.error('Error fetching transit data:', error, error instanceof Error ? error.name + ': ' + error.message : String(error));
+			console.error(
+				'Error fetching transit data:',
+				error,
+				error instanceof Error ? error.name + ': ' + error.message : String(error)
+			);
 			return [];
 		}
 	}
@@ -467,26 +486,26 @@
 		try {
 			const raw = localStorage.getItem(PINNED_STORAGE_KEY);
 			if (!raw) return;
-		const parsed = JSON.parse(raw);
-		if (Array.isArray(parsed?.ids)) {
-			const trimmed = parsed.ids.slice(0, MAX_PINNED_VEHICLES);
-			if (trimmed.length < parsed.ids.length) {
-				for (const id of parsed.ids.slice(MAX_PINNED_VEHICLES)) {
-					endLiveActivity(id);
+			const parsed = JSON.parse(raw);
+			if (Array.isArray(parsed?.ids)) {
+				const trimmed = parsed.ids.slice(0, MAX_PINNED_VEHICLES);
+				if (trimmed.length < parsed.ids.length) {
+					for (const id of parsed.ids.slice(MAX_PINNED_VEHICLES)) {
+						endLiveActivity(id);
+					}
+				}
+				pinnedVehicleIds = trimmed;
+			}
+			if (parsed?.snapshots && typeof parsed.snapshots === 'object') {
+				pinnedSnapshots = parsed.snapshots;
+				for (const id of Object.keys(pinnedSnapshots)) {
+					if (!pinnedVehicleIds.includes(id)) {
+						const next = { ...pinnedSnapshots };
+						delete next[id];
+						pinnedSnapshots = next;
+					}
 				}
 			}
-			pinnedVehicleIds = trimmed;
-		}
-		if (parsed?.snapshots && typeof parsed.snapshots === 'object') {
-			pinnedSnapshots = parsed.snapshots;
-			for (const id of Object.keys(pinnedSnapshots)) {
-				if (!pinnedVehicleIds.includes(id)) {
-					const next = { ...pinnedSnapshots };
-					delete next[id];
-					pinnedSnapshots = next;
-				}
-			}
-		}
 		} catch (error) {
 			console.warn('Failed to load pinned vehicles from storage:', error);
 		}
@@ -787,11 +806,13 @@
 	}
 
 	function closeBottomSheet() {
+		if (!selectedVehicle) return;
 		isClosing = true;
 		tripSchedule = null;
 		clearTripLayers();
 		resetBlockScheduleState();
 		setTimeout(() => {
+			if (!isClosing) return;
 			selectedVehicle = null;
 			isClosing = false;
 		}, 200);
@@ -1149,6 +1170,161 @@
 
 	function handleSearchInput() {
 		updateVehicleMarkers(allVehicles);
+		if (activeTab === 'stops') renderStopMarkers();
+	}
+
+	async function fetchStops(): Promise<void> {
+		if (stopsLoaded || stopsLoading) return;
+		stopsLoading = true;
+		try {
+			// Station groups: parent_station hubs merged, standalone stops as-is.
+			const data = await graphqlRequest<{ stopGroups: any[] }>(
+				apiBaseUrl,
+				`{ stopGroups { group_id group_name stop_lat stop_lon route_id } }`
+			);
+			allStops = (data.stopGroups || [])
+				.filter((s) => s.stop_lat && s.stop_lon)
+				.map((s) => {
+					const routeId = s.route_id || '';
+					const sep = routeId.indexOf(':');
+					const agencyCode = sep >= 0 ? routeId.slice(0, sep) : '';
+					const routeShortName = sep >= 0 ? routeId.slice(sep + 1) : routeId;
+					let agencyName: string | null = null;
+					for (const a of agencies.values()) {
+						if (a.code === agencyCode) {
+							agencyName = a.name;
+							break;
+						}
+					}
+					return {
+						stop_id: s.group_id,
+						stop_name: s.group_name || s.group_id,
+						stop_lat: parseFloat(s.stop_lat),
+						stop_lon: parseFloat(s.stop_lon),
+						color: getVehicleColorForAgency(routeShortName, agencyName)
+					};
+				});
+			stopsLoaded = true;
+			renderStopMarkers();
+		} catch (error) {
+			console.error('Error fetching stops:', error);
+		} finally {
+			stopsLoading = false;
+		}
+	}
+
+	function matchesStopSearch(stop: { stop_id: string; stop_name: string }): boolean {
+		const query = searchQuery.trim().toLowerCase();
+		if (!query) return true;
+		return (
+			stop.stop_name?.toLowerCase().includes(query) || stop.stop_id.toLowerCase().includes(query)
+		);
+	}
+
+	function makeStopFlagIcon(color: string): any {
+		const size = 18;
+		const flagSvg = `<svg width="${size - 6}" height="${size - 6}" viewBox="0 0 24 24" fill="#111111" xmlns="http://www.w3.org/2000/svg"><path d="M14.4 6L14 4H5v17h2v-7h5.6l.4 2h7V6h-5.6z"/></svg>`;
+		return L.divIcon({
+			className: 'stop-flag-marker',
+			html: `<div style="width:${size}px;height:${size}px;background:white;border:2px solid ${color};display:flex;align-items:center;justify-content:center;border-radius:3px;box-shadow:0 1px 3px rgba(0,0,0,0.3);">${flagSvg}</div>`,
+			iconSize: [size, size],
+			iconAnchor: [size / 2, size / 2]
+		});
+	}
+
+	function renderStopMarkers() {
+		if (!map || !L || activeTab !== 'stops') return;
+		if (!stopLayer) {
+			stopLayer = L.layerGroup().addTo(map);
+		}
+		stopLayer.clearLayers();
+
+		// ponytail: DOM flags can't handle all ~19k groups at once, so only
+		// render what's on screen (search matches ignore bounds); raise the
+		// cap or switch to a custom canvas icon if panning feels slow.
+		const bounds = map.getBounds().pad(0.25);
+		const hasQuery = !!searchQuery.trim();
+		let count = 0;
+		for (const stop of allStops) {
+			if (count >= 1500) break;
+			if (!matchesStopSearch(stop)) continue;
+			if (!hasQuery && !bounds.contains([stop.stop_lat, stop.stop_lon])) continue;
+			L.marker([stop.stop_lat, stop.stop_lon], { icon: makeStopFlagIcon(stop.color) })
+				.on('click', () => selectStop(stop))
+				.addTo(stopLayer);
+			count++;
+		}
+	}
+
+	async function selectStop(stop: {
+		stop_id: string;
+		stop_name: string;
+		stop_lat: number;
+		stop_lon: number;
+	}) {
+		if (!map || !L) return;
+		selectedStop = stop;
+		stopIsClosing = false;
+		stopDepartures = null;
+		try {
+			const result = await graphqlRequest<{ stop: any }>(
+				apiBaseUrl,
+				`query($stopId: String!) { stop(stopId: $stopId) { stop_id stop_name departures { route_id route_short_name trip_headsign departure_time departure_timestamp } } }`,
+				{ stopId: stop.stop_id }
+			);
+			const detail = result.stop;
+			if (!detail || selectedStop?.stop_id !== stop.stop_id) return;
+			if (detail.stop_name) selectedStop = { ...stop, stop_name: detail.stop_name };
+
+			stopDepartures = (detail.departures || []).map((d: any) => {
+				const routeCode = d.route_id?.split(':')[0] || '';
+				let agencyName: string | null = null;
+				for (const a of agencies.values()) {
+					if (a.code === routeCode) {
+						agencyName = a.name;
+						break;
+					}
+				}
+				return { ...d, color: getVehicleColorForAgency(d.route_short_name, agencyName) };
+			});
+		} catch (error) {
+			console.error(`Error fetching departures for stop ${stop.stop_id}:`, error);
+			if (selectedStop?.stop_id === stop.stop_id) stopDepartures = [];
+		}
+	}
+
+	function closeStopSheet() {
+		if (!selectedStop) return;
+		stopIsClosing = true;
+		setTimeout(() => {
+			if (!stopIsClosing) return;
+			selectedStop = null;
+			stopIsClosing = false;
+		}, 200);
+	}
+
+	function jumpToDepartureVehicle(d: any) {
+		if (!map || !L) return;
+		const vehicle = allVehicles.find((v) => v.trip_id === d.trip_id);
+		if (!vehicle) return;
+		setTab('vehicles');
+		selectVehicle(vehicle);
+		map.setView([vehicle.lat, vehicle.lon], Math.max(map.getZoom(), 15), { animate: true });
+	}
+
+	function setTab(tab: 'vehicles' | 'stops') {
+		if (activeTab === tab || !map) return;
+		activeTab = tab;
+		closeBottomSheet();
+		closeStopSheet();
+		if (tab === 'stops') {
+			map.removeLayer(vehicleCanvasLayer);
+			fetchStops();
+			renderStopMarkers();
+		} else {
+			if (stopLayer) stopLayer.clearLayers();
+			map.addLayer(vehicleCanvasLayer);
+		}
 	}
 
 	onMount(async () => {
@@ -1187,10 +1363,11 @@
 
 			map.on('click', () => {
 				closeBottomSheet();
+				closeStopSheet();
 			});
 
 			map.on('moveend zoomend', () => {
-				// Canvas layer handles its own rendering
+				if (activeTab === 'stops') renderStopMarkers();
 			});
 
 			await fetchAgencies();
@@ -1263,6 +1440,7 @@
 	});
 
 	onDestroy(() => {
+		if (!browser) return;
 		window.removeEventListener('headways:vehicleOpen', handleVehicleOpen);
 		if (pendingDeepLinkTimer) {
 			clearTimeout(pendingDeepLinkTimer);
@@ -1451,6 +1629,15 @@
 
 	<div bind:this={mapContainer} class="map"></div>
 
+	<!-- <div class="view-switcher">
+		<button class:active={activeTab === 'vehicles'} onclick={() => setTab('vehicles')}>
+			<span class="material-symbols-outlined">directions_bus</span>Vehicles
+		</button>
+		<button class:active={activeTab === 'stops'} onclick={() => setTab('stops')}>
+			<span class="material-symbols-outlined">signpost</span>Stops
+		</button>
+	</div> -->
+
 	{#if loading}
 		<div class="loading-overlay">
 			<div class="spinner"></div>
@@ -1558,6 +1745,16 @@
 			{lastFetchTime}
 		/>
 	{/if}
+
+	<!-- {#if selectedStop}
+		<StopPopup
+			{selectedStop}
+			departures={stopDepartures}
+			isClosing={stopIsClosing}
+			onClose={closeStopSheet}
+			onDepartureClick={jumpToDepartureVehicle}
+		/>
+	{/if} -->
 </div>
 
 <style>
@@ -1717,6 +1914,43 @@
 		left: 0;
 		right: 0;
 		bottom: 0;
+	}
+
+	.view-switcher {
+		position: absolute;
+		bottom: calc(16px + env(safe-area-inset-bottom));
+		left: 50%;
+		transform: translateX(-50%);
+		z-index: 1000;
+		display: flex;
+		background: white;
+		border-radius: 999px;
+		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+		padding: 4px;
+		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+	}
+
+	.view-switcher button {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		border: none;
+		background: transparent;
+		border-radius: 999px;
+		padding: 8px 18px;
+		font-size: 13px;
+		font-weight: 600;
+		color: #6b7280;
+		cursor: pointer;
+	}
+
+	.view-switcher button.active {
+		background: #2563eb;
+		color: white;
+	}
+
+	.view-switcher .material-symbols-outlined {
+		font-size: 18px;
 	}
 
 	.pinned-panel {
