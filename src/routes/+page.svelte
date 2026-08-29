@@ -18,6 +18,7 @@
 	} from '$lib/liveActivities';
 	import type { LiveActivityVehicle } from '$lib/liveActivities';
 	import 'maplibre-gl/dist/maplibre-gl.css';
+	import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 
 	let mapContainer: HTMLDivElement;
 	let map: any;
@@ -1409,6 +1410,8 @@
 			loadSettingsFromStorage();
 			L = (await import('leaflet')).default;
 			(window as any).L = L;
+			const { setWorkerUrl } = await import('maplibre-gl');
+			setWorkerUrl(maplibreWorkerUrl);
 			await import('@maplibre/maplibre-gl-leaflet');
 			// await import('projektpro-leaflet-smoothwheelzoom');
 
