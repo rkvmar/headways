@@ -49,9 +49,7 @@
 	// Regions served by the backend. `arg` is the GraphQL `region` value
 	// (undefined/null = SF Bay default). Numeric agency ids are namespaced by
 	// each region's `idBase` so they never collide across regions.
-	const REGIONS = [
-		{ arg: null, label: 'SF Bay', idBase: 0 }
-	];
+	const REGIONS = [{ arg: null, label: 'SF Bay', idBase: 0 }];
 	let pinnedVehicleIds: string[] = $state([]);
 	let pinnedSnapshots: Record<string, PinnedVehicleSnapshot> = $state({});
 	let pinDisabled = $derived(pinnedVehicleIds.length >= MAX_PINNED_VEHICLES);
@@ -326,8 +324,7 @@
 				const agencyCode =
 					(effectiveRouteId && extractAgencyCode(effectiveRouteId)) ||
 					extractAgencyCode(trip.tripId);
-				const numericAgencyId =
-					mergedAgencyCodeToNumericId.get(agencyCode) || regionFallbackId;
+				const numericAgencyId = mergedAgencyCodeToNumericId.get(agencyCode) || regionFallbackId;
 
 				const routeShortName =
 					vehicle.routeShortName ||
@@ -1132,6 +1129,7 @@
 		FBUS: 'F',
 		Hollis: 'H',
 		'Shell/Pow': 'SP',
+		'Shell/Pow Sat': 'SP',
 		'Shell/Pow Sun': 'SP',
 		'Lot D': 'D',
 		'West Field Garage': 'WFG',
