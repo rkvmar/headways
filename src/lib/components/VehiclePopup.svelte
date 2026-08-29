@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	// Vehicle photos disabled
-	// import { PUBLIC_API_BASE_URL } from '$env/static/public';
+	import { PUBLIC_API_BASE_URL } from '$env/static/public';
 	import { titleCaseHeadsign, titleCase } from '$lib/utils/strings';
 	import { getReadableAgencyName } from '$lib/utils/agencyNames';
 
@@ -63,10 +62,12 @@
 		return days === 1 ? '1d ago' : `${days}d ago`;
 	});
 
-	// Vehicle photos disabled
-	/*
 	let vehicleImages: any[] = [];
 	let imagesLoading = false;
+
+	function imageSrc(raw: string): string {
+		return raw.startsWith('/') ? PUBLIC_API_BASE_URL + raw : raw;
+	}
 
 	async function loadVehicleImages(vehicleId: string) {
 		imagesLoading = true;
@@ -90,7 +91,6 @@
 			vehicleImages = [];
 		}
 	});
-	*/
 
 	let isStopsOpen = $state(false);
 
@@ -248,14 +248,14 @@
 			</div>
 		</div>
 
-		<!-- <div class="section-title">Photos</div>
+		<div class="section-title">Photos</div>
 		{#if imagesLoading}
 			<div class="photo-placeholder">Loading...</div>
 		{:else if vehicleImages.length > 0}
 			{#each vehicleImages as img (img.id)}
 				<div class="photo-entry">
-					<a href={img.image_url} target="_blank" class="photo-link">
-						<img src={img.image_url} alt={img.description || 'Vehicle photo'} loading="lazy" />
+					<a href={imageSrc(img.image_url)} target="_blank" class="photo-link">
+						<img src={imageSrc(img.image_url)} alt={img.description || 'Vehicle photo'} loading="lazy" />
 					</a>
 					{#if img.attribution}
 						<div class="photo-attribution">{img.attribution}</div>
@@ -272,7 +272,7 @@
 				)}&agency={encodeURIComponent(agency?.code || '')}"
 				class="add-photo-link">Add Photo</a
 			>
-		</div> -->
+		</div>
 
 		<div>
 			<div class="section-title">Vehicle Info</div>

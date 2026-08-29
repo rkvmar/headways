@@ -1,30 +1,7 @@
 <script lang="ts">
-	// Vehicle photos disabled
-	/*
 	import { page } from '$app/stores';
 	import { PUBLIC_API_BASE_URL } from '$env/static/public';
 	import { onMount } from 'svelte';
-
-	const AGENCY_OPTIONS = [
-		{ code: 'SF', name: 'SF Muni' },
-		{ code: 'AC', name: 'AC Transit' },
-		{ code: 'VTA', name: 'VTA' },
-		{ code: 'SM', name: 'SamTrans' },
-		{ code: 'SC', name: 'Santa Cruz Metro' },
-		{ code: 'GG', name: 'Golden Gate Transit' },
-		{ code: 'ST', name: 'SolTrans' },
-		{ code: 'MA', name: 'Marin Transit' },
-		{ code: 'WC', name: 'WestCAT' },
-		{ code: 'CT', name: 'County Connection' },
-		{ code: 'VN', name: 'Vine Transit' },
-		{ code: 'CC', name: 'Capitol Corridor' },
-		{ code: 'ACE', name: 'Altamont Corridor Express' },
-		{ code: 'LA', name: 'LA Metro' },
-		{ code: 'SD', name: 'SD MTS' },
-		{ code: 'NCTD', name: 'North County Transit District' },
-		{ code: 'FO', name: 'Foothill Transit' },
-		{ code: 'PA', name: 'Pasadena Transit' }
-	];
 
 	let vehicleId = $state('');
 	let agencyCode = $state('');
@@ -34,48 +11,58 @@
 		agencyCode = $page.url.searchParams.get('agency') || '';
 	});
 
-	let imageUrl = $state('');
+	let imageFile: File | null = $state(null);
+	let previewUrl = $state('');
 	let attribution = $state('');
 	let saving = $state(false);
 	let error = $state('');
 	let success = $state('');
 
+	function onFileSelected(e: Event) {
+		const input = e.target as HTMLInputElement;
+		imageFile = input.files?.[0] || null;
+		error = '';
+		if (previewUrl) URL.revokeObjectURL(previewUrl);
+		previewUrl = imageFile ? URL.createObjectURL(imageFile) : '';
+	}
+
 	async function handleSubmit(e: Event) {
 		e.preventDefault();
-		if (!imageUrl.trim() || !vehicleId || !agencyCode) return;
+		if (!imageFile || !vehicleId) return;
 		saving = true;
 		error = '';
 		success = '';
 		try {
+			const fd = new FormData();
+			fd.append('vehicle_id', vehicleId);
+			fd.append('agency_code', agencyCode);
+			fd.append('attribution', attribution.trim());
+			fd.append('file', imageFile);
 			const res = await fetch(`${PUBLIC_API_BASE_URL}/api/images/upload`, {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					image_url: imageUrl.trim(),
-					vehicle_id: vehicleId,
-					agency_code: agencyCode,
-					attribution: attribution.trim() || undefined
-				})
+				body: fd
 			});
 			const data = await res.json();
 			if (!res.ok) throw new Error(data.error || 'Save failed');
 			success = `Photo saved for vehicle ${data.vehicle_id}`;
-			imageUrl = '';
+			imageFile = null;
 			attribution = '';
+			if (previewUrl) URL.revokeObjectURL(previewUrl);
+			previewUrl = '';
+			const input = document.getElementById('file') as HTMLInputElement | null;
+			if (input) input.value = '';
 		} catch (e: unknown) {
 			error = e instanceof Error ? e.message : 'Failed to save';
 		} finally {
 			saving = false;
 		}
 	}
-	*/
 </script>
 
 <svelte:head>
 	<title>Add Photo - Headways</title>
 </svelte:head>
 
-<!-- Vehicle photos disabled
 <div class="container">
 	<a href="/" class="back-link">← Back to map</a>
 	<h1>Add Vehicle Photo</h1>
@@ -93,25 +80,25 @@
 		</label>
 
 		<label class="field">
-			<span class="label">Agency *</span>
-			<select bind:value={agencyCode} required class="input">
-				<option value="" disabled>Select agency</option>
-				{#each AGENCY_OPTIONS as opt}
-					<option value={opt.code}>{opt.name}</option>
-				{/each}
-			</select>
+			<span class="label">Agency</span>
+			<input
+				type="text"
+				bind:value={agencyCode}
+				class="input"
+				placeholder="e.g. SF, AC, VTA, Sound Transit"
+			/>
 		</label>
 
 		<label class="field">
-			<span class="label">Image URL *</span>
-			<input
-				type="url"
-				bind:value={imageUrl}
-				required
-				placeholder="https://example.com/photo.jpg"
-				class="input"
-			/>
+			<span class="label">Photo *</span>
+			<input id="file" type="file" accept="image/*" required onchange={onFileSelected} class="input" />
 		</label>
+
+		{#if previewUrl}
+			<div class="preview">
+				<img src={previewUrl} alt="Preview" />
+			</div>
+		{/if}
 
 		<label class="field">
 			<span class="label">Attribution</span>
@@ -133,19 +120,13 @@
 			</div>
 		{/if}
 
-		<button
-			type="submit"
-			class="btn"
-			disabled={saving || !imageUrl.trim() || !vehicleId || !agencyCode}
-		>
-			{saving ? 'Saving...' : 'Save Photo'}
+		<button type="submit" class="btn" disabled={saving || !imageFile || !vehicleId}>
+			{saving ? 'Saving...' : 'Upload Photo'}
 		</button>
 	</form>
 </div>
--->
 
 <style>
-	/*
 	.container {
 		max-width: 480px;
 		margin: 0 auto;
@@ -220,6 +201,18 @@
 		color: #6b7280;
 	}
 
+	.preview {
+		margin-top: -8px;
+	}
+
+	.preview img {
+		width: 100%;
+		max-height: 240px;
+		object-fit: cover;
+		border-radius: 8px;
+		border: 1px solid #e5e7eb;
+	}
+
 	.btn {
 		padding: 12px 20px;
 		background: #2563eb;
@@ -266,5 +259,4 @@
 		color: #059669;
 		font-weight: 600;
 	}
-	*/
 </style>
