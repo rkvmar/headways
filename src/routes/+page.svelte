@@ -17,6 +17,7 @@
 		formatDeviation
 	} from '$lib/liveActivities';
 	import type { LiveActivityVehicle } from '$lib/liveActivities';
+	import 'maplibre-gl/dist/maplibre-gl.css';
 
 	let mapContainer: HTMLDivElement;
 	let map: any;
@@ -44,6 +45,12 @@
 	const SETTINGS_STORAGE_KEY = 'headways:settings';
 	const DEFAULT_MAP_VIEW = { lat: 37.75063, lng: -122.43276, zoom: 10 };
 	const MAX_PINNED_VEHICLES = 3;
+	// Regions served by the backend. `arg` is the GraphQL `region` value
+	// (undefined/null = SF Bay default). Numeric agency ids are namespaced by
+	// each region's `idBase` so they never collide across regions.
+	const REGIONS = [
+		{ arg: null, label: 'SF Bay', idBase: 0 }
+	];
 	let pinnedVehicleIds: string[] = $state([]);
 	let pinnedSnapshots: Record<string, PinnedVehicleSnapshot> = $state({});
 	let pinDisabled = $derived(pinnedVehicleIds.length >= MAX_PINNED_VEHICLES);
@@ -55,6 +62,7 @@
 	let enabledRouteTypes: Set<number> | null = $state(null); // null = all enabled
 	let colorMode: 'route' | 'timeliness' = $state('route');
 	let apiBaseUrl = $state(PUBLIC_API_BASE_URL);
+	let hasFittedBounds = false;
 	let defaultLat = $state(DEFAULT_MAP_VIEW.lat);
 	let defaultLng = $state(DEFAULT_MAP_VIEW.lng);
 	let defaultZoom = $state(DEFAULT_MAP_VIEW.zoom);
@@ -64,6 +72,7 @@
 	let activeTab: 'vehicles' | 'stops' = $state('vehicles');
 	let allStops: {
 		stop_id: string;
+		group_id: string;
 		stop_name: string;
 		stop_lat: number;
 		stop_lon: number;
@@ -127,6 +136,7 @@
 		length: number;
 		icon_code: string;
 		short_headsign: string;
+		region: string | null;
 	}
 
 	interface Agency {
@@ -160,105 +170,142 @@
 		const maxRetries = 3;
 		const baseDelayMs = 1000;
 
-		for (let attempt = 1; attempt <= maxRetries; attempt++) {
-			try {
-				const data = await graphqlRequest<{
-					agencies: any[];
-				}>(apiBaseUrl, `{ agencies { agency_id agency_name } }`);
+		agencies.clear();
 
-				const agenciesData = data.agencies;
-
-				agencies.clear();
-
-				let nextNumericId = 1;
-
-				for (const agency of agenciesData) {
-					const agencyCode = agency.agency_id;
-					const numericId = nextNumericId++;
-
-					agencies.set(numericId, {
-						id: numericId,
-						code: agencyCode,
-						name: agency.agency_name,
-						short_name: agency.agency_id,
-						color: '',
-						text_color: ''
-					});
-				}
-
-				return;
-			} catch (error) {
-				const isAbortError = error instanceof DOMException && error.name === 'AbortError';
-
-				if (attempt === maxRetries) {
-					const context = isAbortError
-						? 'Request aborted — possible timeout or network interruption'
-						: '';
-					console.error(
-						`Error fetching agencies data (attempt ${attempt}/${maxRetries}):`,
-						error,
-						context
+		for (const region of REGIONS) {
+			for (let attempt = 1; attempt <= maxRetries; attempt++) {
+				try {
+					const data = await graphqlRequest<{
+						agencies: any[];
+					}>(
+						apiBaseUrl,
+						`query($region: String) { agencies(region: $region) { agency_id agency_name } }`,
+						{ region: region.arg }
 					);
-					return;
-				}
 
-				if (!isAbortError) {
-					console.error(`Error fetching agencies data (attempt ${attempt}/${maxRetries}):`, error);
-					return;
-				}
+					const agenciesData = data.agencies;
 
-				const delayMs = baseDelayMs * Math.pow(2, attempt - 1);
-				console.warn(
-					`Agencies fetch aborted (attempt ${attempt}/${maxRetries}), retrying in ${delayMs}ms...`
-				);
-				await new Promise((resolve) => setTimeout(resolve, delayMs));
+					for (const agency of agenciesData) {
+						const agencyCode = agency.agency_id;
+						const numericId = region.idBase + agencies.size + 1;
+
+						agencies.set(numericId, {
+							id: numericId,
+							code: agencyCode,
+							name: agency.agency_name,
+							short_name: agency.agency_id,
+							color: '',
+							text_color: '',
+							region: region
+						});
+					}
+					break;
+				} catch (error) {
+					const isAbortError = error instanceof DOMException && error.name === 'AbortError';
+
+					if (attempt === maxRetries) {
+						const context = isAbortError
+							? 'Request aborted — possible timeout or network interruption'
+							: '';
+						console.error(
+							`Error fetching agencies data for ${region.label} (attempt ${attempt}/${maxRetries}):`,
+							error,
+							context
+						);
+					} else if (isAbortError) {
+						const delayMs = baseDelayMs * Math.pow(2, attempt - 1);
+						console.warn(
+							`Agencies fetch for ${region.label} aborted (attempt ${attempt}/${maxRetries}), retrying in ${delayMs}ms...`
+						);
+						await new Promise((resolve) => setTimeout(resolve, delayMs));
+					} else {
+						console.error(
+							`Error fetching agencies data for ${region.label} (attempt ${attempt}/${maxRetries}):`,
+							error
+						);
+						break;
+					}
+				}
 			}
 		}
 	}
 
 	async function fetchRoutes(): Promise<void> {
-		try {
-			const data = await graphqlRequest<{ routes: any[] }>(
-				apiBaseUrl,
-				`{ routes { route_id route_short_name route_long_name route_type } }`
-			);
+		routes.clear();
+		for (const region of REGIONS) {
+			try {
+				const data = await graphqlRequest<{ routes: any[] }>(
+					apiBaseUrl,
+					`query($region: String) { routes(region: $region) { route_id route_short_name route_long_name route_type } }`,
+					{ region: region.arg }
+				);
 
-			routes.clear();
-			for (const route of data.routes) {
-				if (route.route_id) {
-					routes.set(route.route_id, route);
+				for (const route of data.routes) {
+					if (route.route_id) {
+						routes.set(route.route_id, route);
+					}
 				}
+			} catch (error) {
+				console.error(`Error fetching routes data for ${region.label}:`, error);
 			}
-			updateVehicleMarkers(allVehicles);
-		} catch (error) {
-			console.error('Error fetching routes data:', error);
 		}
+		updateVehicleMarkers(allVehicles);
 	}
 
 	async function fetchTransitData(): Promise<TransitVehicle[]> {
-		try {
-			const data = await graphqlRequest<{
-				vehicleFeed: { fetchedAt: string; data: { entity: any[] } };
-			}>(
-				apiBaseUrl,
-				`{ vehicleFeed { fetchedAt data { entity { id vehicle { trip { tripId routeId directionId delay tripInfoFound tripHeadsign serviceId shapeId blockId tripShortName } position { latitude longitude bearing speed } timestamp stopId currentStopSequence occupancyStatus stopName vehicle { id label } vehicleYear vehicleMake vehicleModel vehicleFuel vehicleLength vehicleIconCode routeShortName } } } } }`
-			);
+		// Agency code prefixes: SF uses `AC:route`, Seattle consolidated uses
+		// `40_route`. Extract the leading token for either.
+		function extractAgencyCode(routeOrTripId: string): string {
+			const colon = routeOrTripId.indexOf(':');
+			if (colon >= 0) return routeOrTripId.slice(0, colon);
+			const underscore = routeOrTripId.indexOf('_');
+			if (underscore > 0) return routeOrTripId.slice(0, underscore);
+			return routeOrTripId;
+		}
+
+		const mergedAgencyCodeToNumericId = new Map<string, number>();
+		for (const [numericId, agency] of agencies.entries()) {
+			if (agency.code) {
+				mergedAgencyCodeToNumericId.set(agency.code, numericId);
+			}
+		}
+
+		const vehicles: TransitVehicle[] = [];
+
+		for (const region of REGIONS) {
+			let data;
+			try {
+				data = await graphqlRequest<{
+					vehicleFeed: { fetchedAt: string; data: { entity: any[] } };
+				}>(
+					apiBaseUrl,
+					`query($region: String) { vehicleFeed(region: $region) { fetchedAt data { entity { id vehicle { trip { tripId routeId directionId delay tripInfoFound tripHeadsign serviceId shapeId blockId tripShortName } position { latitude longitude bearing speed } timestamp stopId currentStopSequence occupancyStatus stopName vehicle { id label } vehicleYear vehicleMake vehicleModel vehicleFuel vehicleLength vehicleIconCode routeShortName } } } } }`,
+					{ region: region.arg }
+				);
+			} catch (error) {
+				console.error(
+					`Error fetching transit data for ${region.label}:`,
+					error,
+					error instanceof Error ? error.name + ': ' + error.message : String(error)
+				);
+				continue;
+			}
 
 			const vehiclePositionsData = data.vehicleFeed.data;
 			lastFetchTime = new Date(data.vehicleFeed.fetchedAt).getTime();
 
-			const agencyCodeToNumericId = new Map<string, number>();
-			for (const [numericId, agency] of agencies.entries()) {
-				if (agency.code) {
-					agencyCodeToNumericId.set(agency.code, numericId);
-				}
+			if (!vehiclePositionsData || !vehiclePositionsData.entity) {
+				console.error(`Vehicle positions data for ${region.label} has no entity array`);
+				continue;
 			}
 
-			const vehicles: TransitVehicle[] = [];
-
-			if (!vehiclePositionsData || !vehiclePositionsData.entity) {
-				console.error('Vehicle positions data has no entity array');
-				return [];
+			// Fallback id for agencies whose code isn't in the merged map.
+			let regionFallbackId = region.idBase + 1;
+			for (const [numericId, agency] of agencies.entries()) {
+				if (agency.region?.arg === region.arg) {
+					regionFallbackId = numericId;
+					break;
+				}
 			}
 
 			for (const entity of vehiclePositionsData.entity) {
@@ -266,17 +313,27 @@
 				if (!vehicle) continue;
 
 				const trip = vehicle.trip;
-				if (!trip || !trip.tripId || !trip.tripInfoFound) continue;
+				// tripInfoFound only marks whether schedule enrichment succeeded; a
+				// live vehicle with a trip id and position is still renderable, so
+				// gate on trip id + position (checked below) rather than enrichment.
+				if (!trip || !trip.tripId) continue;
 
 				const position = vehicle.position;
 				if (!position || !position.latitude || !position.longitude) continue;
 
 				const effectiveRouteId = trip.routeId;
-				const agencyCode = effectiveRouteId?.split(':')[0] || trip.tripId?.split(':')[0];
-				const numericAgencyId = agencyCodeToNumericId.get(agencyCode) || 1;
+				const agencyCode =
+					(effectiveRouteId && extractAgencyCode(effectiveRouteId)) ||
+					extractAgencyCode(trip.tripId);
+				const numericAgencyId =
+					mergedAgencyCodeToNumericId.get(agencyCode) || regionFallbackId;
 
-				const routeShortName = vehicle.routeShortName || effectiveRouteId?.split(':')[1] || '';
+				const routeShortName =
+					vehicle.routeShortName ||
+					(effectiveRouteId ? effectiveRouteId.split(/[:|_]/)[1] || '' : '');
 
+				// Agency codes are alpha in SF (`AC`) and numeric in Seattle (`40`),
+				// so prefixing with the agency code keeps ids unique across regions.
 				const uniqueId = `${agencyCode}:${vehicle.vehicle?.id || entity.id}`;
 
 				vehicles.push({
@@ -320,19 +377,13 @@
 					fuel: vehicle.vehicleFuel || '',
 					length: vehicle.vehicleLength || 0,
 					icon_code: vehicle.vehicleIconCode || '',
-					short_headsign: trip.tripHeadsign || ''
+					short_headsign: trip.tripHeadsign || '',
+					region: region.arg
 				});
 			}
-
-			return vehicles;
-		} catch (error) {
-			console.error(
-				'Error fetching transit data:',
-				error,
-				error instanceof Error ? error.name + ': ' + error.message : String(error)
-			);
-			return [];
 		}
+
+		return vehicles;
 	}
 
 	function formatTime(timeString: string): string {
@@ -426,15 +477,11 @@
 		darkMode = !darkMode;
 		if (tileLayer && map) {
 			map.removeLayer(tileLayer);
-			tileLayer = L.tileLayer(
-				darkMode
-					? 'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}.png'
-					: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}.png',
-				{
-					attribution:
-						'&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>, &copy; <a href="https://carto.com/attributions">CARTO</a>'
-				}
-			).addTo(map);
+			tileLayer = L.maplibreGL({
+				style: darkMode
+					? 'https://tiles.openfreemap.org/styles/dark'
+					: 'https://tiles.openfreemap.org/styles/bright'
+			}).addTo(map);
 		}
 		persistSettings();
 	}
@@ -617,7 +664,9 @@
 		const agencyName = agency.name.toLowerCase();
 		const routeShortName = vehicle?.route_short_name;
 
-		const regionKey = apiBaseUrl.includes('socal') ? 'socal' : 'sfbay';
+		// Region is carried on each agency record; fall back to the URL sniff
+		// for legacy records that predate multi-region support.
+		const regionKey = agency.region?.name || (apiBaseUrl.includes('socal') ? 'socal' : 'sfbay');
 		const basePath = `/agencyLogos/${regionKey}`;
 		const agencyKey = agencyName.toLowerCase();
 		const routeKey = routeShortName || '';
@@ -708,13 +757,18 @@
 		return agencyLogoMap[agencyKey] || null;
 	}
 
-	async function fetchTripData(agency: number, tripId: string, signal?: AbortSignal) {
+	async function fetchTripData(
+		agency: number,
+		tripId: string,
+		region: string | null,
+		signal?: AbortSignal
+	) {
 		console.log(`Loading trip detail: trip_id=${tripId}, agency=${agency}`);
 		try {
 			const result = await graphqlRequest<{ tripDetail: any }>(
 				apiBaseUrl,
-				`query($tripId: String!) { tripDetail(tripId: $tripId) { trip_id route_id service_id trip_headsign direction_id shape_id block_id trip_short_name shape schedule { stop_id stop_sequence arrival_time departure_time stop_name stop_lat stop_lon } } }`,
-				{ tripId },
+				`query($regional: String, $tripId: String!) { tripDetail(region: $regional, tripId: $tripId) { trip_id route_id service_id trip_headsign direction_id shape_id block_id trip_short_name shape schedule { stop_id stop_sequence arrival_time departure_time stop_name stop_lat stop_lon } } }`,
+				{ regional: region, tripId },
 				signal,
 				120000
 			);
@@ -814,8 +868,8 @@
 		try {
 			const result = await graphqlRequest<{ shape: number[][] }>(
 				apiBaseUrl,
-				`query($shapeId: String!) { shape(shapeId: $shapeId) }`,
-				{ shapeId: vehicle.shape_id },
+				`query($regional: String, $shapeId: String!) { shape(region: $regional, shapeId: $shapeId) }`,
+				{ regional: vehicle.region, shapeId: vehicle.shape_id },
 				signal
 			);
 			const data = result.shape;
@@ -844,7 +898,7 @@
 			const routeColor = getVehicleColorForAgency(vehicle.route_short_name, agency?.name);
 
 			const shapePromise = fetchShapeForVehicle(vehicle, signal);
-			const tripPromise = fetchTripData(vehicle.agency, vehicle.trip_id, signal);
+			const tripPromise = fetchTripData(vehicle.agency, vehicle.trip_id, vehicle.region, signal);
 
 			const shapeCoords = await shapePromise;
 			if (shapeCoords.length > 0) {
@@ -1153,6 +1207,13 @@
 		refreshPinnedSnapshots(vehicles);
 		nowTick = Date.now();
 		tryOpenDeepLink();
+		if (!hasFittedBounds && vehicles.length > 0) {
+			hasFittedBounds = true;
+			const latLngs = vehicles
+				.filter((v) => v.lat && v.lon)
+				.map((v) => [v.lat, v.lon] as [number, number]);
+			if (latLngs.length > 0) map.fitBounds(latLngs, { padding: [60, 60] });
+		}
 	}
 
 	function handleSearchInput() {
@@ -1164,18 +1225,41 @@
 		if (stopsLoaded || stopsLoading) return;
 		stopsLoading = true;
 		try {
-			// Station groups: parent_station hubs merged, standalone stops as-is.
-			const data = await graphqlRequest<{ stopGroups: any[] }>(
-				apiBaseUrl,
-				`{ stopGroups { group_id group_name stop_lat stop_lon route_id } }`
-			);
-			allStops = (data.stopGroups || [])
-				.filter((s) => s.stop_lat && s.stop_lon)
-				.map((s) => {
+			function extractAgencyCode(routeId: string): string {
+				const colon = routeId.indexOf(':');
+				if (colon >= 0) return routeId.slice(0, colon);
+				const underscore = routeId.indexOf('_');
+				if (underscore > 0) return routeId.slice(0, underscore);
+				return '';
+			}
+			function extractRouteShortName(routeId: string): string {
+				const colon = routeId.indexOf(':');
+				if (colon >= 0) return routeId.slice(colon + 1);
+				const underscore = routeId.indexOf('_');
+				return underscore >= 0 ? routeId.slice(underscore + 1) : routeId;
+			}
+
+			const merged: {
+				stop_id: string;
+				group_id: string;
+				stop_name: string;
+				stop_lat: number;
+				stop_lon: number;
+				color: string;
+			}[] = [];
+
+			for (const region of REGIONS) {
+				const data = await graphqlRequest<{ stopGroups: any[] }>(
+					apiBaseUrl,
+					`query($region: String) { stopGroups(region: $region) { group_id group_name stop_lat stop_lon route_id } }`,
+					{ region: region.arg }
+				);
+
+				for (const s of data.stopGroups || []) {
+					if (!s.stop_lat || !s.stop_lon) continue;
 					const routeId = s.route_id || '';
-					const sep = routeId.indexOf(':');
-					const agencyCode = sep >= 0 ? routeId.slice(0, sep) : '';
-					const routeShortName = sep >= 0 ? routeId.slice(sep + 1) : routeId;
+					const agencyCode = extractAgencyCode(routeId);
+					const routeShortName = extractRouteShortName(routeId);
 					let agencyName: string | null = null;
 					for (const a of agencies.values()) {
 						if (a.code === agencyCode) {
@@ -1183,14 +1267,17 @@
 							break;
 						}
 					}
-					return {
-						stop_id: s.group_id,
+					merged.push({
+						stop_id: `${region.label}:${s.group_id}`,
+						group_id: s.group_id,
 						stop_name: s.group_name || s.group_id,
 						stop_lat: parseFloat(s.stop_lat),
 						stop_lon: parseFloat(s.stop_lon),
 						color: getVehicleColorForAgency(routeShortName, agencyName)
-					};
-				});
+					});
+				}
+			}
+			allStops = merged;
 			stopsLoaded = true;
 			renderStopMarkers();
 		} catch (error) {
@@ -1245,6 +1332,7 @@
 
 	async function selectStop(stop: {
 		stop_id: string;
+		group_id: string;
 		stop_name: string;
 		stop_lat: number;
 		stop_lon: number;
@@ -1257,7 +1345,7 @@
 			const result = await graphqlRequest<{ stop: any }>(
 				apiBaseUrl,
 				`query($stopId: String!) { stop(stopId: $stopId) { stop_id stop_name departures { route_id route_short_name trip_headsign departure_time departure_timestamp } } }`,
-				{ stopId: stop.stop_id }
+				{ stopId: stop.group_id }
 			);
 			const detail = result.stop;
 			if (!detail || selectedStop?.stop_id !== stop.stop_id) return;
@@ -1320,8 +1408,8 @@
 			loadPinnedVehiclesFromStorage();
 			loadSettingsFromStorage();
 			L = (await import('leaflet')).default;
-
 			(window as any).L = L;
+			await import('@maplibre/maplibre-gl-leaflet');
 			// await import('projektpro-leaflet-smoothwheelzoom');
 
 			map = L.map(mapContainer, {
@@ -1340,15 +1428,11 @@
 			// 	map.smoothWheelZoom.enable();
 			// }
 
-			tileLayer = L.tileLayer(
-				darkMode
-					? 'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}.png'
-					: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}.png',
-				{
-					attribution:
-						'&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>, &copy; <a href="https://carto.com/attributions">CARTO</a>'
-				}
-			).addTo(map);
+			tileLayer = L.maplibreGL({
+				style: darkMode
+					? 'https://tiles.openfreemap.org/styles/dark'
+					: 'https://tiles.openfreemap.org/styles/bright'
+			}).addTo(map);
 
 			map.on('click', () => {
 				closeBottomSheet();
@@ -1555,7 +1639,12 @@
 							checked={isAgencyEnabled(id)}
 							onchange={() => toggleAgency(id)}
 						/>
-						<span>{getReadableAgencyName(agency.name)}</span>
+						<span>
+							{getReadableAgencyName(agency.name)}
+							{#if agency.region?.label !== 'SF Bay'}
+								<span class="region-tag">{agency.region?.label}</span>
+							{/if}
+						</span>
 					</label>
 				{/each}
 			</div>
@@ -1755,6 +1844,18 @@
 	.filter-checkbox input[type='checkbox'] {
 		margin: 0;
 		accent-color: #e24b4b;
+	}
+
+	.region-tag {
+		font-size: 10px;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.4px;
+		color: #6b7280;
+		background: #eef1f5;
+		border-radius: 3px;
+		padding: 1px 4px;
+		margin-left: 6px;
 	}
 
 	.filter-radio {

@@ -33,7 +33,9 @@
 		"@capacitor/cli": "^8.4.2",
 		"@capacitor/core": "^8.4.2",
 		"@capacitor/ios": "^8.4.2",
+		"@maplibre/maplibre-gl-leaflet": "^0.1.4",
 		"leaflet": "^1.9.4",
+		"maplibre-gl": "^6.6.0",
 		"projektpro-leaflet-smoothwheelzoom": "^0.1.4"
 	}
 }

@@ -62,6 +62,12 @@ export function getVehicleColorForAgency(
 			'G Line': '#FC4B00',
 			'J Line': '#AEB9C0',
 			'K Line': '#EA6BB2'
+		},
+		'sound transit': {
+			'1 Line': '#3DAE2B',
+			'2 Line': '#00A0DF',
+			'T Line': '#F38B00',
+			'ST Express': '#2B376E'
 		}
 	};
 
@@ -104,7 +110,9 @@ export function getVehicleColorForAgency(
 		ladot: '#0D47A1',
 		'long beach transit': '#D62028',
 		'foothill transit': '#1A87BC',
-		'pasadena transit': '#1BA6BC'
+		'pasadena transit': '#1BA6BC',
+		//Seattle (Sound Transit)
+		'sound transit': '#2B376E'
 	};
 
 	const routeMap = routeColorMap[agencyKey];
