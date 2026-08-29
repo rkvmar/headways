@@ -738,6 +738,7 @@
 			'sfo airport': `${basePath}/sfo.png`,
 			'altamont corridor express': `${basePath}/ace.png`,
 			'capitol corridor joint powers authority': `${basePath}/capitol-corridor.jpg`,
+			'union city transit': `${basePath}/uc.png`,
 
 			//SOCAL
 			'san diego mts': `${basePath}/mts.png`,

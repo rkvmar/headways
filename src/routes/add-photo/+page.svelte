@@ -1,14 +1,29 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { PUBLIC_API_BASE_URL } from '$env/static/public';
+	import { graphqlRequest } from '$lib/graphql';
+	import { getReadableAgencyName } from '$lib/utils/agencyNames';
 	import { onMount } from 'svelte';
 
 	let vehicleId = $state('');
 	let agencyCode = $state('');
+	let agencyOptions = $state<{ code: string; name: string }[]>([]);
 
-	onMount(() => {
+	onMount(async () => {
 		vehicleId = $page.url.searchParams.get('vehicle_id') || '';
-		agencyCode = $page.url.searchParams.get('agency') || '';
+		const fromUrl = $page.url.searchParams.get('agency') || '';
+		try {
+			const data = await graphqlRequest<{ agencies: { agency_id: string; agency_name: string }[] }>(
+				PUBLIC_API_BASE_URL,
+				'query($region: String) { agencies(region: $region) { agency_id agency_name } }'
+			);
+			agencyOptions = (data?.agencies || [])
+				.map((a) => ({ code: a.agency_id, name: getReadableAgencyName(a.agency_name) }))
+				.sort((a, b) => a.name.localeCompare(b.name));
+			if (fromUrl) agencyCode = fromUrl;
+		} catch {
+			agencyOptions = [];
+		}
 	});
 
 	let imageFile: File | null = $state(null);
@@ -28,7 +43,7 @@
 
 	async function handleSubmit(e: Event) {
 		e.preventDefault();
-		if (!imageFile || !vehicleId) return;
+		if (!imageFile || !vehicleId || !agencyCode) return;
 		saving = true;
 		error = '';
 		success = '';
@@ -80,13 +95,13 @@
 		</label>
 
 		<label class="field">
-			<span class="label">Agency</span>
-			<input
-				type="text"
-				bind:value={agencyCode}
-				class="input"
-				placeholder="e.g. SF, AC, VTA, Sound Transit"
-			/>
+			<span class="label">Agency *</span>
+			<select bind:value={agencyCode} required class="input" disabled={agencyOptions.length === 0}>
+				<option value="" disabled selected>Select agency</option>
+				{#each agencyOptions as opt (opt.code)}
+					<option value={opt.code}>{opt.name}</option>
+				{/each}
+			</select>
 		</label>
 
 		<label class="field">
@@ -120,7 +135,7 @@
 			</div>
 		{/if}
 
-		<button type="submit" class="btn" disabled={saving || !imageFile || !vehicleId}>
+		<button type="submit" class="btn" disabled={saving || !imageFile || !vehicleId || !agencyCode}>
 			{saving ? 'Saving...' : 'Upload Photo'}
 		</button>
 	</form>
@@ -194,6 +209,10 @@
 	.input:focus {
 		border-color: #2563eb;
 		box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+	}
+
+	select.input {
+		background: #ffffff;
 	}
 
 	.input:disabled {
