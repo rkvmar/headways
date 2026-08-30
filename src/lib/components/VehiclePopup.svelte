@@ -62,8 +62,8 @@
 		return days === 1 ? '1d ago' : `${days}d ago`;
 	});
 
-	let vehicleImages: any[] = [];
-	let imagesLoading = false;
+	let vehicleImages: any[] = $state([]);
+	let imagesLoading = $state(true);
 
 	function imageSrc(raw: string): string {
 		return raw.startsWith('/') ? PUBLIC_API_BASE_URL + raw : raw;
@@ -254,9 +254,7 @@
 		{:else if vehicleImages.length > 0}
 			{#each vehicleImages as img (img.id)}
 				<div class="photo-entry">
-					<a href={imageSrc(img.image_url)} target="_blank" class="photo-link">
-						<img src={imageSrc(img.image_url)} alt={img.description || 'Vehicle photo'} loading="lazy" />
-					</a>
+					<img src={imageSrc(img.image_url)} alt={img.description || 'Vehicle photo'} loading="lazy" />
 					{#if img.attribution}
 						<div class="photo-attribution">{img.attribution}</div>
 					{/if}
@@ -740,13 +738,11 @@
 		margin-bottom: 8px;
 	}
 
-	.photo-link {
-		display: block;
-	}
+	
 
 	.photo-entry img {
 		width: 100%;
-		height: 160px;
+		aspect-ratio: 16 / 9;
 		object-fit: cover;
 		border-radius: 8px;
 		border: 1px solid #e5e7eb;

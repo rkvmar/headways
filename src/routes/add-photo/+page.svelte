@@ -59,7 +59,7 @@
 			});
 			const data = await res.json();
 			if (!res.ok) throw new Error(data.error || 'Save failed');
-			success = `Photo saved for vehicle ${data.vehicle_id}`;
+			success = `Photo saved for vehicle ${data.vehicle_id}.`;
 			imageFile = null;
 			attribution = '';
 			if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -151,7 +151,7 @@
 
 	.back-link {
 		font-size: 14px;
-		color: #2563eb;
+		color: #e24b4b;
 		text-decoration: none;
 		font-weight: 500;
 	}
@@ -207,8 +207,7 @@
 	}
 
 	.input:focus {
-		border-color: #2563eb;
-		box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+		border-color: #e24b4b;
 	}
 
 	select.input {
@@ -234,7 +233,7 @@
 
 	.btn {
 		padding: 12px 20px;
-		background: #2563eb;
+		background: #e24b4b;
 		color: white;
 		border: none;
 		border-radius: 8px;
@@ -246,7 +245,7 @@
 	}
 
 	.btn:hover:not(:disabled) {
-		background: #1d4ed8;
+		background: #c73737;
 	}
 
 	.btn:disabled {
@@ -255,27 +254,22 @@
 	}
 
 	.msg {
-		padding: 12px 16px;
-		border-radius: 8px;
 		font-size: 14px;
+		text-align: left;
 	}
 
 	.msg.error {
-		background: #fef2f2;
 		color: #991b1b;
-		border: 1px solid #fecaca;
 	}
 
 	.msg.success {
-		background: #ecfdf5;
-		color: #065f46;
-		border: 1px solid #a7f3d0;
+		color: #111827;
 	}
 
 	.success-link {
 		display: inline-block;
 		margin-top: 8px;
-		color: #059669;
+		color: #e24b4b;
 		font-weight: 600;
 	}
 </style>
