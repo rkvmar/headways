@@ -49,7 +49,11 @@
 	// Regions served by the backend. `arg` is the GraphQL `region` value
 	// (undefined/null = SF Bay default). Numeric agency ids are namespaced by
 	// each region's `idBase` so they never collide across regions.
-	const REGIONS = [{ arg: null, label: 'SF Bay', idBase: 0 }];
+	const REGIONS = [
+		{ arg: null, label: 'SF Bay', idBase: 0 },
+		{ arg: 'sacrt', label: 'Sacramento', idBase: 90 },
+		{ arg: 'elk', label: 'Elk Grove', idBase: 180 }
+	];
 	let pinnedVehicleIds: string[] = $state([]);
 	let pinnedSnapshots: Record<string, PinnedVehicleSnapshot> = $state({});
 	let pinDisabled = $derived(pinnedVehicleIds.length >= MAX_PINNED_VEHICLES);

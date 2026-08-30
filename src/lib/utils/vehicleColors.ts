@@ -104,6 +104,9 @@ export function getVehicleColorForAgency(
     'altamont corridor express': '#78217D',
     'vacaville city coach': '#19A1DB',
     'union city transit': '#141972',
+    // Sacramento
+    'sacramento regional transit': '#002469',
+    'sacrt (elk grove)': '#F6AE1B',
     //SoCal
     'san diego mts': '#DE2B26',
     'north county transit district': '#088C99',
