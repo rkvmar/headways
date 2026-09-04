@@ -47,6 +47,10 @@ export function getVehicleColorForAgency(
       G: '#50A140',
       B: '#004D91'
     },
+    'mountain view community shuttle': {
+      'RED': '#FF2B0A',
+      'GRAY': '#8C8C88'
+    },
     'san diego mts': {
       'Blue Line': '#0070BF',
       'Green Line': '#32BB6A',

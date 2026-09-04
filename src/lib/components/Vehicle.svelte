@@ -82,13 +82,11 @@
 		if (absMin < 0.5) return '#069b37';
 		if (deviation > 0) {
 			if (absMin < 2) return '#f4a609';
-			if (absMin < 5) return '#d8630f';
-			if (absMin < 10) return '#b50909';
+			if (absMin < 10) return '#d8630f';
 			return '#dc2626';
 		} else {
 			if (absMin < 2) return '#2e87f4';
-			if (absMin < 5) return '#1264e8';
-			if (absMin < 10) return '#134bc4';
+			if (absMin < 10) return '#1264e8';
 			return '#1d4ed8';
 		}
 	}
@@ -116,7 +114,9 @@
 		'A - AM': 'A',
 		'B - AM': 'B',
 		'C - AM': 'C',
-		Copper: 'C'
+		Copper: 'C',
+		RED: 'R',
+		GRAY: 'G'
 	};
 
 	const backgroundColor = $derived(

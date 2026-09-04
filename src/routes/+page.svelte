@@ -743,6 +743,8 @@
 			'altamont corridor express': `${basePath}/ace.png`,
 			'capitol corridor joint powers authority': `${basePath}/capitol-corridor.jpg`,
 			'union city transit': `${basePath}/uc.png`,
+			'sacramento regional transit': `${basePath}/sacrt.png`,
+			'sacrt (elk grove)': `${basePath}/sacrt.png`,
 
 			//SOCAL
 			'san diego mts': `${basePath}/mts.png`,
