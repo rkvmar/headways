@@ -69,11 +69,12 @@
 		return raw.startsWith('/') ? PUBLIC_API_BASE_URL + raw : raw;
 	}
 
-	async function loadVehicleImages(vehicleId: string) {
+	async function loadVehicleImages(vehicle: any) {
 		imagesLoading = true;
 		try {
+			const agencyParam = vehicle.agency_code ? `?agency=${encodeURIComponent(vehicle.agency_code)}` : '';
 			const res = await fetch(
-				`${PUBLIC_API_BASE_URL}/api/images/vehicle/${encodeURIComponent(vehicleId)}`
+				`${PUBLIC_API_BASE_URL}/api/images/vehicle/${encodeURIComponent(vehicle.vehicle_id)}${agencyParam}`
 			);
 			vehicleImages = res.ok ? await res.json() : [];
 		} catch {
@@ -86,7 +87,7 @@
 	$effect(() => {
 		const vehicle = selectedVehicle;
 		if (vehicle?.vehicle_id) {
-			loadVehicleImages(vehicle.vehicle_id);
+			loadVehicleImages(vehicle);
 		} else {
 			vehicleImages = [];
 		}

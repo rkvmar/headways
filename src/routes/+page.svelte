@@ -65,7 +65,7 @@
 	let enabledRouteTypes: Set<number> | null = $state(null); // null = all enabled
 	let colorMode: 'route' | 'timeliness' = $state('route');
 	let imageFilter: 'all' | 'image' | 'no-image' = $state('all');
-	let vehicleIdsWithImages: Set<string> = $state(new Set());
+	let vehicleIdsWithImages: Set<string> = $state(new Set()); // keys: agency:vehicle_id
 	let apiBaseUrl = $state(PUBLIC_API_BASE_URL);
 	let hasFittedBounds = false;
 	let defaultLat = $state(DEFAULT_MAP_VIEW.lat);
@@ -296,13 +296,13 @@
 				continue;
 			}
 
-			const vehiclePositionsData = data.vehicleFeed.data;
-			lastFetchTime = new Date(data.vehicleFeed.fetchedAt).getTime();
-
-			if (!vehiclePositionsData || !vehiclePositionsData.entity) {
-				console.error(`Vehicle positions data for ${region.label} has no entity array`);
+			if (!data.vehicleFeed || !data.vehicleFeed.data || !data.vehicleFeed.data.entity) {
+				console.error(`Vehicle feed for ${region.label} has no entity array`);
 				continue;
 			}
+
+			const vehiclePositionsData = data.vehicleFeed.data;
+			lastFetchTime = new Date(data.vehicleFeed.fetchedAt).getTime();
 
 			// Fallback id for agencies whose code isn't in the merged map.
 			let regionFallbackId = region.idBase + 1;
@@ -485,8 +485,10 @@
 		try {
 			const res = await fetch(`${apiBaseUrl}/api/images/vehicle-ids`);
 			if (res.ok) {
-				const ids: string[] = await res.json();
-				vehicleIdsWithImages = new Set(ids);
+				const keys: { vehicle_id: string; agency_code: string }[] = await res.json();
+				vehicleIdsWithImages = new Set(
+					keys.filter((k) => k.vehicle_id).map((k) => `${k.agency_code}:${k.vehicle_id}`)
+				);
 			}
 		} catch {
 			// image filter stays on "all"; vehicles all shown
@@ -1023,8 +1025,8 @@
 	function matchesFilters(vehicle: TransitVehicle): boolean {
 		if (enabledAgencies && !enabledAgencies.has(vehicle.agency)) return false;
 
-		if (imageFilter === 'image' && !vehicleIdsWithImages.has(vehicle.vehicle_id)) return false;
-		if (imageFilter === 'no-image' && vehicleIdsWithImages.has(vehicle.vehicle_id)) return false;
+		if (imageFilter === 'image' && !vehicleIdsWithImages.has(vehicle.unique_id)) return false;
+		if (imageFilter === 'no-image' && vehicleIdsWithImages.has(vehicle.unique_id)) return false;
 
 		if (enabledRouteTypes) {
 			const routeType = routes.get(vehicle.route_id)?.route_type;
