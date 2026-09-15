@@ -64,6 +64,8 @@
 	let enabledAgencies: Set<number> | null = $state(null); // null = all enabled
 	let enabledRouteTypes: Set<number> | null = $state(null); // null = all enabled
 	let colorMode: 'route' | 'timeliness' = $state('route');
+	let imageFilter: 'all' | 'image' | 'no-image' = $state('all');
+	let vehicleIdsWithImages: Set<string> = $state(new Set());
 	let apiBaseUrl = $state(PUBLIC_API_BASE_URL);
 	let hasFittedBounds = false;
 	let defaultLat = $state(DEFAULT_MAP_VIEW.lat);
@@ -452,6 +454,9 @@
 			if (typeof parsed?.darkMode === 'boolean') {
 				darkMode = parsed.darkMode;
 			}
+			if (parsed?.imageFilter === 'image' || parsed?.imageFilter === 'no-image') {
+				imageFilter = parsed.imageFilter;
+			}
 		} catch (error) {
 			console.warn('Failed to load settings from storage:', error);
 		}
@@ -467,11 +472,24 @@
 					defaultLng,
 					defaultZoom,
 					colorMode,
-					darkMode
+					darkMode,
+					imageFilter
 				})
 			);
 		} catch (error) {
 			console.warn('Failed to persist settings:', error);
+		}
+	}
+
+	async function loadVehicleIdsWithImages() {
+		try {
+			const res = await fetch(`${apiBaseUrl}/api/images/vehicle-ids`);
+			if (res.ok) {
+				const ids: string[] = await res.json();
+				vehicleIdsWithImages = new Set(ids);
+			}
+		} catch {
+			// image filter stays on "all"; vehicles all shown
 		}
 	}
 
@@ -1005,6 +1023,9 @@
 	function matchesFilters(vehicle: TransitVehicle): boolean {
 		if (enabledAgencies && !enabledAgencies.has(vehicle.agency)) return false;
 
+		if (imageFilter === 'image' && !vehicleIdsWithImages.has(vehicle.vehicle_id)) return false;
+		if (imageFilter === 'no-image' && vehicleIdsWithImages.has(vehicle.vehicle_id)) return false;
+
 		if (enabledRouteTypes) {
 			const routeType = routes.get(vehicle.route_id)?.route_type;
 			const parsedType = routeType != null ? parseInt(routeType) : null;
@@ -1413,6 +1434,7 @@
 			window.addEventListener('headways:vehicleOpen', handleVehicleOpen);
 			loadPinnedVehiclesFromStorage();
 			loadSettingsFromStorage();
+			loadVehicleIdsWithImages();
 			L = (await import('leaflet')).default;
 			(window as any).L = L;
 			const { setWorkerUrl } = await import('maplibre-gl');
@@ -1625,6 +1647,52 @@
 			</div>
 
 			<div class="filters-group">
+				<div class="filters-group-title">Images</div>
+				<label class="filter-radio">
+					<input
+						type="radio"
+						name="imageFilter"
+						value="all"
+						checked={imageFilter === 'all'}
+						onchange={() => {
+							imageFilter = 'all';
+							persistSettings();
+							updateVehicleMarkers(allVehicles);
+						}}
+					/>
+					<span>All</span>
+				</label>
+				<label class="filter-radio">
+					<input
+						type="radio"
+						name="imageFilter"
+						value="image"
+						checked={imageFilter === 'image'}
+						onchange={() => {
+							imageFilter = 'image';
+							persistSettings();
+							updateVehicleMarkers(allVehicles);
+						}}
+					/>
+					<span>Image</span>
+				</label>
+				<label class="filter-radio">
+					<input
+						type="radio"
+						name="imageFilter"
+						value="no-image"
+						checked={imageFilter === 'no-image'}
+						onchange={() => {
+							imageFilter = 'no-image';
+							persistSettings();
+							updateVehicleMarkers(allVehicles);
+						}}
+					/>
+					<span>No Image</span>
+				</label>
+			</div>
+
+			<div class="filters-group">
 				<div class="filters-group-title">Route Type</div>
 				{#each Object.entries(routeTypeNames) as [typeStr, typeName]}
 					{@const typeNum = parseInt(typeStr)}
@@ -1648,12 +1716,9 @@
 							checked={isAgencyEnabled(id)}
 							onchange={() => toggleAgency(id)}
 						/>
-						<span>
-							{getReadableAgencyName(agency.name)}
-							{#if agency.region?.label !== 'SF Bay'}
-								<span class="region-tag">{agency.region?.label}</span>
-							{/if}
-						</span>
+<span>
+						{getReadableAgencyName(agency.name)}
+					</span>
 					</label>
 				{/each}
 			</div>
@@ -1853,18 +1918,6 @@
 	.filter-checkbox input[type='checkbox'] {
 		margin: 0;
 		accent-color: #e24b4b;
-	}
-
-	.region-tag {
-		font-size: 10px;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.4px;
-		color: #6b7280;
-		background: #eef1f5;
-		border-radius: 3px;
-		padding: 1px 4px;
-		margin-left: 6px;
 	}
 
 	.filter-radio {
