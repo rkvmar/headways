@@ -32,6 +32,20 @@ export function getVehicleColorForAgency(
     'ac transit': {
       '1T': '#6B1984'
     },
+    'bay area rapid transit': {
+      'Red-N': '#FF0000',
+      'Red-S': '#FF0000',
+      'Orange-N': '#FF9933',
+      'Orange-S': '#FF9933',
+      'Yellow-N': '#FFFF33',
+      'Yellow-S': '#FFFF33',
+      'Green-N': '#339933',
+      'Green-S': '#339933',
+      'Blue-N': '#0099CC',
+      'Blue-S': '#0099CC',
+      'Grey-N': '#B0BEC7',
+      'Grey-S': '#B0BEC7'
+    },
     vta: {
       'Blue Line': '#2CB6E7',
       'Green Line': '#A1CF67',
@@ -82,6 +96,7 @@ export function getVehicleColorForAgency(
     'golden gate ferry': '#426C3E',
     'golden gate transit': '#426C3E',
     caltrain: '#DB1734',
+    'bay area rapid transit': '#0099D8',
     'ac transit': '#006B54',
     'san francisco bay ferry': '#0A4E86',
     'san francisco bay ferries': '#0A4E86',

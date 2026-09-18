@@ -742,6 +742,7 @@
 			'golden gate ferry': `${basePath}/golden-gate-transit.png`,
 			'golden gate transit': `${basePath}/golden-gate-transit.png`,
 			caltrain: `${basePath}/caltrain.png`,
+			'bay area rapid transit': `${basePath}/bart.png`,
 			'san francisco bay ferry': `${basePath}/sf-bay-ferry.png`,
 			'san francisco bay ferries': `${basePath}/sf-bay-ferry.png`,
 			'county connection': `${basePath}/county-connection.png`,
@@ -1143,6 +1144,18 @@
 	}
 
 	const routeNameToShortName: Record<string, string> = {
+		'Red-N': 'R',
+		'Red-S': 'R',
+		'Orange-N': 'O',
+		'Orange-S': 'O',
+		'Yellow-N': 'Y',
+		'Yellow-S': 'Y',
+		'Green-N': 'G',
+		'Green-S': 'G',
+		'Blue-N': 'B',
+		'Blue-S': 'B',
+		'Grey-N': 'OAK',
+		'Grey-S': 'OAK',
 		'Presidio GO South Hills': 'SH',
 		'Presidio GO Downtown': 'DT',
 		'Blue Line': 'B',

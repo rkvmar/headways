@@ -5,6 +5,7 @@ export const agencyNameMap: Record<string, string> = {
 	'westcat (western contra costa)': 'WestCAT',
 	'capitol corridor joint powers authority': 'Capitol Corridor',
 	'ac transit': 'AC Transit',
+	'bay area rapid transit': 'BART',
 	petaluma: 'Petaluma Transit',
 	sonoma: 'Sonoma County Transit',
 	santarosa: 'Santa Rosa CityBus',
