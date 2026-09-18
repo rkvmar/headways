@@ -92,6 +92,18 @@
 	}
 
 	const routeNameToShortName: Record<string, string> = {
+		'Red-N': 'R',
+		'Red-S': 'R',
+		'Orange-N': 'O',
+		'Orange-S': 'O',
+		'Yellow-N': 'Y',
+		'Yellow-S': 'Y',
+		'Green-N': 'G',
+		'Green-S': 'G',
+		'Blue-N': 'B',
+		'Blue-S': 'B',
+		'Grey-N': 'OAK',
+		'Grey-S': 'OAK',
 		'Presidio GO South Hills': 'SH',
 		'Presidio GO Downtown': 'DT',
 		'Blue Line': 'B',
