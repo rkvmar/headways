@@ -116,7 +116,19 @@
 		'C - AM': 'C',
 		Copper: 'C',
 		RED: 'R',
-		GRAY: 'G'
+		GRAY: 'G',
+		'Red-N': 'R',
+		'Red-S': 'R',
+		'Orange-N': 'O',
+		'Orange-S': 'O',
+		'Yellow-N': 'Y',
+		'Yellow-S': 'Y',
+		'Green-N': 'G',
+		'Green-S': 'G',
+		'Blue-N': 'B',
+		'Blue-S': 'B',
+		'Grey-N': 'OAK',
+		'Grey-S': 'OAK'
 	};
 
 	const backgroundColor = $derived(

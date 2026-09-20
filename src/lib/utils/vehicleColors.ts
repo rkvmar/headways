@@ -29,6 +29,20 @@ export function getVehicleColorForAgency(
       PH: '#911515',
       CA: '#911515'
     },
+    'bay area rapid transit': {
+      'Red-N': '#ED1C24',
+      'Red-S': '#ED1C24',
+      'Orange-N': '#FAA61A',
+      'Orange-S': '#FAA61A',
+      'Yellow-N': '#FFE600',
+      'Yellow-S': '#FFE600',
+      'Green-N': '#359A35',
+      'Green-S': '#339933',
+      'Blue-N': '#00A6E9',
+      'Blue-S': '#00A6E9',
+      'Grey-N': '#B0BEC7',
+      'Grey-S': '#B0BEC7'
+    },
     'ac transit': {
       '1T': '#6B1984'
     },

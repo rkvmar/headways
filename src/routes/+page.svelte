@@ -765,6 +765,7 @@
 			'union city transit': `${basePath}/uc.png`,
 			'sacramento regional transit': `${basePath}/sacrt.png`,
 			'sacrt (elk grove)': `${basePath}/sacrt.png`,
+			'bay area rapid transit': `${basePath}/bart.png`,
 
 			//SOCAL
 			'san diego mts': `${basePath}/mts.png`,
@@ -1166,7 +1167,19 @@
 		'A - AM': 'A',
 		'B - AM': 'B',
 		'C - AM': 'C',
-		Copper: 'C'
+		Copper: 'C',
+		'Red-N': 'R',
+		'Red-S': 'R',
+		'Orange-N': 'O',
+		'Orange-S': 'O',
+		'Yellow-N': 'Y',
+		'Yellow-S': 'Y',
+		'Green-N': 'G',
+		'Green-S': 'G',
+		'Blue-N': 'B',
+		'Blue-S': 'B',
+		'Grey-N': 'OAK',
+		'Grey-S': 'OAK'
 	};
 
 	function isTrain(agency?: Agency): boolean {
@@ -1718,9 +1731,9 @@
 							checked={isAgencyEnabled(id)}
 							onchange={() => toggleAgency(id)}
 						/>
-<span>
-						{getReadableAgencyName(agency.name)}
-					</span>
+						<span>
+							{getReadableAgencyName(agency.name)}
+						</span>
 					</label>
 				{/each}
 			</div>
