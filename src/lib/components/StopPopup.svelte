@@ -5,12 +5,14 @@
 	let {
 		selectedStop = null,
 		departures = null as any[] | null,
+		highlightTripId = null as string | null | undefined,
 		isClosing = false,
 		onClose = () => {},
 		onDepartureClick = () => {}
 	}: {
 		selectedStop?: any | null;
 		departures?: any[] | null;
+		highlightTripId?: string | null | undefined;
 		isClosing?: boolean;
 		onClose?: () => void;
 		onDepartureClick?: (departure: any) => void;
@@ -65,7 +67,12 @@
 		{:else}
 			<div class="departures-list">
 				{#each departures as d}
-					<button class="departure-row" onclick={() => onDepartureClick(d)}>
+					<button
+						class="departure-row"
+						class:highlight={d.trip_id === highlightTripId}
+						style={`--route-color: ${d.color || '#2563eb'};`}
+						onclick={() => onDepartureClick(d)}
+					>
 						<span class="route-badge" style={`background:${d.color};`}>
 							{d.route_short_name}
 						</span>
@@ -256,6 +263,14 @@
 
 	.departure-row:hover {
 		background: #f3f4f6;
+	}
+
+	.departure-row.highlight {
+		background: color-mix(in srgb, var(--route-color) 20%, white);
+	}
+
+	.departure-row.highlight:hover {
+		background: color-mix(in srgb, var(--route-color) 30%, white);
 	}
 
 	.route-badge {

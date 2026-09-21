@@ -987,8 +987,24 @@
 								${stop.arrival_time ? formatTime(stop.arrival_time) : ''}
 								${stop.departure_time && stop.departure_time !== stop.arrival_time ? `<br>Departure: ${formatTime(stop.departure_time)}` : ''}
 								${stop.timepoint ? '<br><em>Timepoint</em>' : ''}
+								<button class="trip-stop-open" style="display:block;width:100%;margin-top:8px;padding:6px 0;border:none;border-radius:6px;background:#111827;color:#fff;font-size:12px;font-weight:600;cursor:pointer;">Open stop</button>
 							</div>
 						`);
+						stopMarker.on('popupopen', (e: any) => {
+							e.popup
+								.getElement()
+								.querySelector('.trip-stop-open')
+								?.addEventListener('click', () => {
+									map.closePopup();
+									selectStop({
+										stop_id: stop.stop_id,
+										group_id: stop.stop_id,
+										stop_name: stop.stop_name,
+										stop_lat: stop.stop_lat,
+										stop_lon: stop.stop_lon
+									});
+								});
+						});
 
 						currentTripLayers.push(stopMarker);
 					}
@@ -1386,14 +1402,14 @@
 		try {
 			const result = await graphqlRequest<{ stop: any }>(
 				apiBaseUrl,
-				`query($stopId: String!) { stop(stopId: $stopId) { stop_id stop_name departures { route_id route_short_name trip_headsign departure_time departure_timestamp } } }`,
+				`query($stopId: String!) { stop(stopId: $stopId) { stop_id stop_name departures { route_id route_short_name trip_headsign departure_time departure_timestamp trip_id } } }`,
 				{ stopId: stop.group_id }
 			);
 			const detail = result.stop;
 			if (!detail || selectedStop?.stop_id !== stop.stop_id) return;
 			if (detail.stop_name) selectedStop = { ...stop, stop_name: detail.stop_name };
 
-			stopDepartures = (detail.departures || []).map((d: any) => {
+			const departures = (detail.departures || []).map((d: any) => {
 				const routeCode = d.route_id?.split(':')[0] || '';
 				let agencyName: string | null = null;
 				for (const a of agencies.values()) {
@@ -1404,6 +1420,41 @@
 				}
 				return { ...d, color: getVehicleColorForAgency(d.route_short_name, agencyName) };
 			});
+
+			// The departures API only returns upcoming service, so the vehicle
+			// currently running this trip is never in the list. Inject it from the
+			// schedule so the selected vehicle can be highlighted.
+			const veh = selectedVehicle;
+			if (veh?.trip_id && !departures.some((d: any) => d.trip_id === veh.trip_id)) {
+				const sched = tripSchedule?.find(
+					(s: any) => s.stop_id === stop.group_id || s.stop_id === stop.stop_id
+				);
+				if (sched) {
+					const time = sched.departure_time || sched.arrival_time;
+					const [h, m, s] = (time || '').split(':').map(Number);
+					const ts = new Date();
+					ts.setHours(h || 0, m || 0, s || 0, 0);
+					const routeCode = veh.route_id?.split(':')[0] || '';
+					let agencyName: string | null = null;
+					for (const a of agencies.values()) {
+						if (a.code === routeCode) {
+							agencyName = a.name;
+							break;
+						}
+					}
+					departures.unshift({
+						route_id: veh.route_id,
+						route_short_name: veh.route_short_name,
+						trip_headsign: veh.trip_headsign,
+						departure_time: time,
+						departure_timestamp: Math.floor(ts.getTime() / 1000),
+						trip_id: veh.trip_id,
+						color: getVehicleColorForAgency(veh.route_short_name, agencyName)
+					});
+				}
+			}
+
+			stopDepartures = departures;
 		} catch (error) {
 			console.error(`Error fetching departures for stop ${stop.stop_id}:`, error);
 			if (selectedStop?.stop_id === stop.stop_id) stopDepartures = [];
@@ -1859,15 +1910,16 @@
 		/>
 	{/if}
 
-	<!-- {#if selectedStop}
+	{#if selectedStop}
 		<StopPopup
 			{selectedStop}
 			departures={stopDepartures}
+			highlightTripId={selectedVehicle?.trip_id}
 			isClosing={stopIsClosing}
 			onClose={closeStopSheet}
 			onDepartureClick={jumpToDepartureVehicle}
 		/>
-	{/if} -->
+	{/if}
 </div>
 
 <style>
