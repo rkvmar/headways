@@ -987,7 +987,7 @@
 								${stop.arrival_time ? formatTime(stop.arrival_time) : ''}
 								${stop.departure_time && stop.departure_time !== stop.arrival_time ? `<br>Departure: ${formatTime(stop.departure_time)}` : ''}
 								${stop.timepoint ? '<br><em>Timepoint</em>' : ''}
-								<button class="trip-stop-open" style="display:block;width:100%;margin-top:8px;padding:6px 0;border:none;border-radius:6px;background:#111827;color:#fff;font-size:12px;font-weight:600;cursor:pointer;">Open stop</button>
+								<button class="trip-stop-open">Open stop</button>
 							</div>
 						`);
 						stopMarker.on('popupopen', (e: any) => {
@@ -2008,6 +2008,20 @@
 		left: 0;
 		right: 0;
 		bottom: 0;
+	}
+
+	:global(.trip-stop-open) {
+		display: block;
+		width: 100%;
+		margin-top: 8px;
+		padding: 6px 8px;
+		border: none;
+		border-radius: 6px;
+		background: #e24b4b;
+		color: #fff;
+		font-size: 12px;
+		font-weight: 600;
+		cursor: pointer;
 	}
 
 	.view-switcher {
